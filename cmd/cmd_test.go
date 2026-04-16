@@ -112,7 +112,7 @@ func TestValidateLinks_ValidSkill(t *testing.T) {
 	}
 
 	// External link checks: valid-skill has no HTTP links, so no results
-	linkResults := links.CheckLinks(t.Context(), dir, s.Body)
+	linkResults := links.CheckLinks(t.Context(), dir, s.Body, links.Options{})
 	if linkResults != nil {
 		t.Errorf("expected nil for skill with no HTTP links, got %d results", len(linkResults))
 	}
@@ -139,7 +139,7 @@ func TestValidateLinks_InvalidSkill(t *testing.T) {
 	}
 
 	// External link checks: invalid-skill has an HTTP link
-	linkResults := links.CheckLinks(t.Context(), dir, s.Body)
+	linkResults := links.CheckLinks(t.Context(), dir, s.Body, links.Options{})
 	if len(linkResults) == 0 {
 		t.Error("expected at least one external link check result")
 	}

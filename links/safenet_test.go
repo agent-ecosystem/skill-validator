@@ -51,7 +51,7 @@ func TestSafeTransportBlocksPrivateIPs(t *testing.T) {
 	// We don't need a server running; the dialer should refuse before connecting.
 	dir := t.TempDir()
 	body := "[metadata](http://169.254.169.254/latest/meta-data/)"
-	results := CheckLinks(t.Context(), dir, body)
+	results := CheckLinks(t.Context(), dir, body, Options{})
 	if len(results) == 0 {
 		t.Fatal("expected a result for blocked private IP link")
 	}
@@ -65,7 +65,7 @@ func TestSafeTransportBlocksPrivateIPs(t *testing.T) {
 func TestSafeTransportBlocksLocalhost(t *testing.T) {
 	dir := t.TempDir()
 	body := "[local](http://127.0.0.1:8080/admin)"
-	results := CheckLinks(t.Context(), dir, body)
+	results := CheckLinks(t.Context(), dir, body, Options{})
 	if len(results) == 0 {
 		t.Fatal("expected a result for blocked localhost link")
 	}

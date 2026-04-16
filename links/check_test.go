@@ -50,7 +50,7 @@ func TestCheckLinks_SkipsRelative(t *testing.T) {
 	t.Run("relative-only links returns nil", func(t *testing.T) {
 		dir := t.TempDir()
 		body := "See [guide](references/guide.md)."
-		results := CheckLinks(t.Context(), dir, body)
+		results := CheckLinks(t.Context(), dir, body, Options{})
 		if results != nil {
 			t.Errorf("expected nil for relative-only links, got %v", results)
 		}
@@ -59,7 +59,7 @@ func TestCheckLinks_SkipsRelative(t *testing.T) {
 	t.Run("mailto and anchors are skipped", func(t *testing.T) {
 		dir := t.TempDir()
 		body := "[email](mailto:user@example.com) and [section](#heading)"
-		results := CheckLinks(t.Context(), dir, body)
+		results := CheckLinks(t.Context(), dir, body, Options{})
 		if results != nil {
 			t.Errorf("expected nil for mailto/anchor links, got %v", results)
 		}
@@ -68,7 +68,7 @@ func TestCheckLinks_SkipsRelative(t *testing.T) {
 	t.Run("template URLs are skipped", func(t *testing.T) {
 		dir := t.TempDir()
 		body := "[PR](https://github.com/{OWNER}/{REPO}/pull/{PR}) and https://api.example.com/{version}/users/{id}"
-		results := CheckLinks(t.Context(), dir, body)
+		results := CheckLinks(t.Context(), dir, body, Options{})
 		if results != nil {
 			t.Errorf("expected nil for template URLs, got %v", results)
 		}
@@ -77,7 +77,7 @@ func TestCheckLinks_SkipsRelative(t *testing.T) {
 	t.Run("no links returns nil", func(t *testing.T) {
 		dir := t.TempDir()
 		body := "No links here."
-		results := CheckLinks(t.Context(), dir, body)
+		results := CheckLinks(t.Context(), dir, body, Options{})
 		if results != nil {
 			t.Errorf("expected nil for no links, got %v", results)
 		}
@@ -124,42 +124,42 @@ func TestCheckLinks_HTTP(t *testing.T) {
 	t.Run("successful HTTP link", func(t *testing.T) {
 		dir := t.TempDir()
 		body := "[ok](" + server.URL + "/ok)"
-		results := CheckLinks(t.Context(), dir, body)
+		results := CheckLinks(t.Context(), dir, body, Options{})
 		requireResultContaining(t, results, types.Pass, "HTTP 200")
 	})
 
 	t.Run("404 HTTP link", func(t *testing.T) {
 		dir := t.TempDir()
 		body := "[missing](" + server.URL + "/not-found)"
-		results := CheckLinks(t.Context(), dir, body)
+		results := CheckLinks(t.Context(), dir, body, Options{})
 		requireResultContaining(t, results, types.Error, "HTTP 404")
 	})
 
 	t.Run("403 HTTP link", func(t *testing.T) {
 		dir := t.TempDir()
 		body := "[blocked](" + server.URL + "/forbidden)"
-		results := CheckLinks(t.Context(), dir, body)
+		results := CheckLinks(t.Context(), dir, body, Options{})
 		requireResultContaining(t, results, types.Info, "HTTP 403")
 	})
 
 	t.Run("500 HTTP link", func(t *testing.T) {
 		dir := t.TempDir()
 		body := "[error](" + server.URL + "/server-error)"
-		results := CheckLinks(t.Context(), dir, body)
+		results := CheckLinks(t.Context(), dir, body, Options{})
 		requireResultContaining(t, results, types.Error, "HTTP 500")
 	})
 
 	t.Run("HEAD 404 falls back to GET 200", func(t *testing.T) {
 		dir := t.TempDir()
 		body := "[spa](" + server.URL + "/head-404-get-200)"
-		results := CheckLinks(t.Context(), dir, body)
+		results := CheckLinks(t.Context(), dir, body, Options{})
 		requireResultContaining(t, results, types.Pass, "HTTP 200")
 	})
 
 	t.Run("HEAD 405 falls back to GET 200", func(t *testing.T) {
 		dir := t.TempDir()
 		body := "[nohead](" + server.URL + "/head-405-get-200)"
-		results := CheckLinks(t.Context(), dir, body)
+		results := CheckLinks(t.Context(), dir, body, Options{})
 		requireResultContaining(t, results, types.Pass, "HTTP 200")
 	})
 
@@ -167,7 +167,7 @@ func TestCheckLinks_HTTP(t *testing.T) {
 		dir := t.TempDir()
 		writeFile(t, dir, "references/guide.md", "content")
 		body := "[guide](references/guide.md) and [site](" + server.URL + "/ok)"
-		results := CheckLinks(t.Context(), dir, body)
+		results := CheckLinks(t.Context(), dir, body, Options{})
 		if len(results) != 1 {
 			t.Fatalf("expected 1 result (HTTP only), got %d", len(results))
 		}
@@ -323,5 +323,131 @@ func TestCheckHTTPLink(t *testing.T) {
 			t.Errorf("expected Error for invalid URL, got level=%d", result.Level)
 		}
 		requireContains(t, result.Message, "invalid URL")
+	})
+}
+
+func TestIsIgnored(t *testing.T) {
+	tests := []struct {
+		name     string
+		url      string
+		patterns []string
+		want     bool
+	}{
+		{
+			name:     "empty patterns never ignores",
+			url:      "https://example.com/page",
+			patterns: nil,
+			want:     false,
+		},
+		{
+			name:     "exact domain match",
+			url:      "https://github.com/myorg/private-repo",
+			patterns: []string{"github.com/myorg"},
+			want:     true,
+		},
+		{
+			name:     "case-insensitive match",
+			url:      "https://GitHub.COM/MyOrg/Repo",
+			patterns: []string{"github.com/myorg"},
+			want:     true,
+		},
+		{
+			name:     "partial URL substring match",
+			url:      "https://internal.company.com/api/v1/resource",
+			patterns: []string{"internal.company.com"},
+			want:     true,
+		},
+		{
+			name:     "no match",
+			url:      "https://public.example.com/page",
+			patterns: []string{"private.example.com"},
+			want:     false,
+		},
+		{
+			name:     "first of multiple patterns matches",
+			url:      "https://github.com/10gen/secret",
+			patterns: []string{"github.com/10gen", "localhost"},
+			want:     true,
+		},
+		{
+			name:     "second of multiple patterns matches",
+			url:      "http://localhost:8080/health",
+			patterns: []string{"github.com/10gen", "localhost"},
+			want:     true,
+		},
+		{
+			name:     "no pattern matches among multiple",
+			url:      "https://public.docs.com/guide",
+			patterns: []string{"github.com/10gen", "localhost", "internal.corp"},
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isIgnored(tt.url, tt.patterns)
+			if got != tt.want {
+				t.Errorf("isIgnored(%q, %v) = %v, want %v", tt.url, tt.patterns, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCheckLinks_IgnorePatterns(t *testing.T) {
+	orig := newHTTPClient
+	newHTTPClient = func() *http.Client { return testHTTPClient() }
+	t.Cleanup(func() { newHTTPClient = orig })
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ok", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/not-found", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	t.Run("ignored URL is not checked", func(t *testing.T) {
+		dir := t.TempDir()
+		body := "[broken](" + server.URL + "/not-found)"
+		opts := Options{IgnorePatterns: []string{server.URL}}
+		results := CheckLinks(t.Context(), dir, body, opts)
+		// All HTTP links were ignored, so CheckLinks returns nil
+		if results != nil {
+			t.Errorf("expected nil when all links are ignored, got %v", results)
+		}
+	})
+
+	t.Run("non-ignored URL is still checked", func(t *testing.T) {
+		dir := t.TempDir()
+		body := "[ok](" + server.URL + "/ok)"
+		opts := Options{IgnorePatterns: []string{"some-other-host.example.com"}}
+		results := CheckLinks(t.Context(), dir, body, opts)
+		requireResultContaining(t, results, types.Pass, "HTTP 200")
+	})
+
+	t.Run("mixed: ignored URL skipped, other URL checked", func(t *testing.T) {
+		dir := t.TempDir()
+		// Two links: one that would fail (ignored) and one that passes (not ignored)
+		body := "[broken](" + server.URL + "/not-found) and [ok](" + server.URL + "/ok)"
+		// Ignore only the not-found path; the /ok path will still be checked.
+		// We use a pattern that only matches /not-found.
+		opts := Options{IgnorePatterns: []string{server.URL + "/not-found"}}
+		results := CheckLinks(t.Context(), dir, body, opts)
+		if len(results) != 1 {
+			t.Fatalf("expected exactly 1 result (only non-ignored link checked), got %d: %v", len(results), results)
+		}
+		requireResultContaining(t, results, types.Pass, "HTTP 200")
+	})
+
+	t.Run("case-insensitive pattern matching", func(t *testing.T) {
+		dir := t.TempDir()
+		body := "[broken](" + server.URL + "/not-found)"
+		opts := Options{IgnorePatterns: []string{strings.ToUpper(server.URL)}}
+		results := CheckLinks(t.Context(), dir, body, opts)
+		if results != nil {
+			t.Errorf("expected nil when link matches case-insensitive pattern, got %v", results)
+		}
 	})
 }
