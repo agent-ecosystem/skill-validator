@@ -227,9 +227,15 @@ Result: passed
 
 ```
 skill-validator validate links <path>
+skill-validator validate links --ignore-link=github.com/myorg <path>
+skill-validator validate links --ignore-link=github.com/myorg --ignore-link=localhost <path>
 ```
 
 Validates external (HTTP/HTTPS) links in SKILL.md. Internal (relative) links are checked by `validate structure`.
+
+| Flag | Effect |
+|---|---|
+| `--ignore-link=<pattern>` | Skip URLs whose lowercase form contains the pattern (case-insensitive substring match). Repeatable or comma-separated. Useful for private repos and localhost URLs that are unreachable from CI. |
 
 ### analyze content
 
@@ -296,6 +302,7 @@ skill-validator check --strict <path>
 skill-validator check --allow-extra-frontmatter <path>
 skill-validator check --allow-flat-layouts <path>
 skill-validator check --allow-dirs=evals,testing <path>
+skill-validator check --ignore-link=github.com/myorg,localhost <path>
 ```
 
 Runs all checks (structure + links + content + contamination).
@@ -310,6 +317,7 @@ Runs all checks (structure + links + content + contamination).
 | `--allow-extra-frontmatter` | Suppress warnings for non-spec frontmatter fields |
 | `--allow-flat-layouts` | Allow files at the skill root without warnings (see [Flat skill layouts](#flat-skill-layouts)) |
 | `--allow-dirs=evals,testing` | Accept specific non-standard directories without warnings (see [Allowing non-standard directories](#allowing-non-standard-directories)) |
+| `--ignore-link=<pattern>` | Skip URLs whose lowercase form contains the pattern during link validation. Repeatable or comma-separated (e.g. `--ignore-link=github.com/myorg,localhost`) |
 
 Valid check groups: `structure`, `links`, `content`, `contamination`.
 
@@ -764,6 +772,7 @@ Directories not in the allow list still produce the standard warning with file c
 - Checks external (HTTP/HTTPS) links only -- internal (relative) links are validated by `validate structure`
 - HTTP/HTTPS links are verified with a HEAD request (10s timeout, concurrent checks)
 - Template URLs using [RFC 6570](https://www.rfc-editor.org/rfc/rfc6570) syntax are skipped (e.g. `https://github.com/{OWNER}/{REPO}/pull/{PR}`)
+- Use `--ignore-link=<pattern>` to skip URLs matching a case-insensitive substring (e.g. `--ignore-link=github.com/myorg` skips all links to that org's repos). The flag is repeatable and also accepts comma-separated patterns. This is useful for private repositories or localhost URLs that are unreachable from CI but valid in local development.
 
 > [!TIP]
 > HTTP 403 responses are reported as `info` rather than errors, since many sites (e.g. doi.org, science.org, mathworks.com) block automated HEAD requests while working fine in browsers. A 403 doesn't necessarily mean the link is broken -- but it does mean the validator couldn't verify it. If your skill includes 403-flagged links, keep in mind that sites blocking the validator's requests may also block requests from LLM agents. If an agent can't access a linked resource, the link wastes context without providing value. Where possible, consider providing the content directly in `references/` rather than linking to it, or offer an alternate source that doesn't restrict automated access. If the links are for human readers rather than agent use, consider removing them from the skill entirely.
