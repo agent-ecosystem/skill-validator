@@ -172,6 +172,24 @@ func TestSliceFlags(t *testing.T) {
 			wantStdout: "unknown directory: testing/",
 			noStdout:   "unknown directory: evals/",
 		},
+		// --ignore-link on validate links: repeated flag
+		{
+			name:     "ignore-link repeated flag skips matched URL",
+			args:     []string{"validate", "links", "--ignore-link=httpstat.us", fixture(t, "invalid-skill")},
+			wantCode: 0,
+		},
+		// --ignore-link on validate links: comma-separated
+		{
+			name:     "ignore-link comma-separated skips matched URL",
+			args:     []string{"validate", "links", "--ignore-link=httpstat.us,other.example.com", fixture(t, "invalid-skill")},
+			wantCode: 0,
+		},
+		// --ignore-link on check --only=links
+		{
+			name:     "check --only=links --ignore-link skips matched URL",
+			args:     []string{"check", "--only=links", "--ignore-link=httpstat.us", fixture(t, "invalid-skill")},
+			wantCode: 0,
+		},
 	}
 
 	for _, tt := range tests {

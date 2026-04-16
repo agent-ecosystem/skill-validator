@@ -855,24 +855,15 @@ func TestOutputJSON_PerFile_ValidSkill(t *testing.T) {
 	}
 }
 
-// writeSkillFile creates a minimal valid SKILL.md in dir with the given body content.
-func writeSkillFile(t *testing.T, dir, body string) {
-	t.Helper()
-	content := "---\nname: test-skill\ndescription: Test skill for link ignore patterns.\n---\n" + body
-	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestRunLinkChecks_WithIgnorePatterns(t *testing.T) {
-	t.Run("ignored URL produces no error", func(t *testing.T) {
-		dir := t.TempDir()
-		// Use an .invalid domain that would fail DNS resolution if actually requested.
-		writeSkillFile(t, dir, "See [private](https://private-repo.corp.invalid/secret) for details.")
-		opts := links.Options{IgnorePatterns: []string{"private-repo.corp.invalid"}}
+	// invalid-skill has https://httpstat.us/404 as its only HTTP link.
+	dir := fixtureDir(t, "invalid-skill")
+
+	t.Run("ignored URL produces no errors", func(t *testing.T) {
+		opts := links.Options{IgnorePatterns: []string{"httpstat.us"}}
 		r := RunLinkChecks(t.Context(), dir, opts)
 		if r.Errors != 0 {
-			t.Errorf("expected 0 errors when all links are ignored, got %d", r.Errors)
+			t.Errorf("expected 0 errors when matching URL is ignored, got %d", r.Errors)
 			for _, res := range r.Results {
 				if res.Level == types.Error {
 					t.Logf("  error: %s: %s", res.Category, res.Message)
@@ -881,53 +872,20 @@ func TestRunLinkChecks_WithIgnorePatterns(t *testing.T) {
 		}
 	})
 
-	t.Run("empty ignore patterns checks links normally", func(t *testing.T) {
-		dir := t.TempDir()
-		// Use an .invalid domain — DNS will fail, which is an error.
-		writeSkillFile(t, dir, "See [broken](https://definitely-unreachable.invalid/path) for details.")
-		opts := links.Options{IgnorePatterns: nil}
+	t.Run("non-matching pattern leaves link checked", func(t *testing.T) {
+		opts := links.Options{IgnorePatterns: []string{"some-other-host.example.com"}}
 		r := RunLinkChecks(t.Context(), dir, opts)
 		if r.Errors == 0 {
-			t.Error("expected errors for unreachable link with no ignore patterns")
-		}
-	})
-
-	t.Run("multiple ignore patterns, all links matched", func(t *testing.T) {
-		dir := t.TempDir()
-		writeSkillFile(t, dir,
-			"[A](https://internal.corp.invalid/a) and [B](https://private.corp.invalid/b)")
-		opts := links.Options{IgnorePatterns: []string{"internal.corp.invalid", "private.corp.invalid"}}
-		r := RunLinkChecks(t.Context(), dir, opts)
-		if r.Errors != 0 {
-			t.Errorf("expected 0 errors when all links are ignored, got %d", r.Errors)
+			t.Error("expected errors when ignore pattern does not match the broken link")
 		}
 	})
 }
 
 func TestRunAllChecks_WithIgnoreLinks(t *testing.T) {
-	t.Run("ignored link produces no error in full check", func(t *testing.T) {
-		dir := t.TempDir()
-		writeSkillFile(t, dir, "See [private](https://private-repo.corp.invalid/secret) for details.")
-		opts := Options{
-			Enabled: AllGroups(),
-			LinksOpts: links.Options{
-				IgnorePatterns: []string{"private-repo.corp.invalid"},
-			},
-		}
-		r := RunAllChecks(t.Context(), dir, opts)
-		for _, res := range r.Results {
-			if res.Category == "Links" && res.Level == types.Error {
-				t.Errorf("unexpected Links error (should have been ignored): %s", res.Message)
-			}
-		}
-	})
+	// invalid-skill has https://httpstat.us/404 as its only HTTP link.
+	dir := fixtureDir(t, "invalid-skill")
 
-	t.Run("ignore patterns propagate through RunAllChecks", func(t *testing.T) {
-		dir := t.TempDir()
-		writeSkillFile(t, dir,
-			"[A](https://internal.corp.invalid/a) and [B](https://other.corp.invalid/b)")
-		// Ignore only one; the other would fail if actually requested.
-		// Since both are .invalid domains, both would fail DNS — so ignore both.
+	t.Run("ignored link produces no Links errors", func(t *testing.T) {
 		opts := Options{
 			Enabled: map[CheckGroup]bool{
 				GroupStructure:     false,
@@ -935,14 +893,12 @@ func TestRunAllChecks_WithIgnoreLinks(t *testing.T) {
 				GroupContent:       false,
 				GroupContamination: false,
 			},
-			LinksOpts: links.Options{
-				IgnorePatterns: []string{"internal.corp.invalid", "other.corp.invalid"},
-			},
+			LinksOpts: links.Options{IgnorePatterns: []string{"httpstat.us"}},
 		}
 		r := RunAllChecks(t.Context(), dir, opts)
 		for _, res := range r.Results {
 			if res.Category == "Links" && res.Level == types.Error {
-				t.Errorf("unexpected Links error: %s", res.Message)
+				t.Errorf("unexpected Links error (should have been ignored): %s", res.Message)
 			}
 		}
 	})
