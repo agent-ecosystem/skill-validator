@@ -47,6 +47,7 @@ func AllGroups() map[CheckGroup]bool {
 type Options struct {
 	Enabled    map[CheckGroup]bool
 	StructOpts structure.Options
+	LinksOpts  links.Options
 }
 
 // RunAllChecks runs all enabled check groups against a single skill directory
@@ -85,7 +86,7 @@ func RunAllChecks(ctx context.Context, dir string, opts Options) *types.Report {
 
 		// Link checks require a fully parsed skill
 		if skillLoaded && opts.Enabled[GroupLinks] {
-			rpt.Results = append(rpt.Results, links.CheckLinks(ctx, dir, body)...)
+			rpt.Results = append(rpt.Results, links.CheckLinks(ctx, dir, body, opts.LinksOpts)...)
 		}
 
 		// Content analysis works on raw content (no frontmatter parsing needed)
@@ -179,7 +180,7 @@ func RunContaminationAnalysis(dir string) *types.Report {
 }
 
 // RunLinkChecks validates external HTTP/HTTPS links in a single skill directory.
-func RunLinkChecks(ctx context.Context, dir string) *types.Report {
+func RunLinkChecks(ctx context.Context, dir string, opts links.Options) *types.Report {
 	rpt := &types.Report{SkillDir: dir}
 
 	s, err := skill.Load(dir)
@@ -190,7 +191,7 @@ func RunLinkChecks(ctx context.Context, dir string) *types.Report {
 		return rpt
 	}
 
-	rpt.Results = append(rpt.Results, links.CheckLinks(ctx, dir, s.Body)...)
+	rpt.Results = append(rpt.Results, links.CheckLinks(ctx, dir, s.Body, opts)...)
 
 	// If no results at all, add a pass result
 	if len(rpt.Results) == 0 {

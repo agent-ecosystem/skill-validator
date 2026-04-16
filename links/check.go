@@ -9,13 +9,23 @@ import (
 	"github.com/agent-ecosystem/skill-validator/types"
 )
 
+// Options configures external link validation.
+type Options struct {
+	// IgnorePatterns is a list of substrings. Any URL that contains one of
+	// these strings (case-insensitive) is skipped without being checked.
+	// Useful for private repositories or localhost URLs that are unreachable
+	// from CI but valid in a local development context.
+	// Example: --ignore-link=github.com/myorg --ignore-link=localhost
+	IgnorePatterns []string
+}
+
 type linkResult struct {
 	url    string
 	result types.Result
 }
 
 // CheckLinks validates external (HTTP/HTTPS) links in the skill body.
-func CheckLinks(ctx context.Context, dir, body string) []types.Result {
+func CheckLinks(ctx context.Context, dir, body string, opts Options) []types.Result {
 	rctx := types.ResultContext{Category: "Links", File: "SKILL.md"}
 	allLinks := ExtractLinks(body)
 	if len(allLinks) == 0 {
@@ -35,9 +45,13 @@ func CheckLinks(ctx context.Context, dir, body string) []types.Result {
 		if strings.Contains(link, "{") {
 			continue
 		}
-		if strings.HasPrefix(link, "http://") || strings.HasPrefix(link, "https://") {
-			httpLinks = append(httpLinks, link)
+		if !strings.HasPrefix(link, "http://") && !strings.HasPrefix(link, "https://") {
+			continue
 		}
+		if isIgnored(link, opts.IgnorePatterns) {
+			continue
+		}
+		httpLinks = append(httpLinks, link)
 	}
 
 	if len(httpLinks) == 0 {
@@ -109,6 +123,18 @@ func checkHTTPLinkGET(rctx types.ResultContext, client *http.Client, url string)
 	defer func() { _ = resp.Body.Close() }()
 
 	return classifyResponse(rctx, url, resp.StatusCode)
+}
+
+// isIgnored reports whether url contains any of the given patterns
+// (case-insensitive substring match).
+func isIgnored(url string, patterns []string) bool {
+	lower := strings.ToLower(url)
+	for _, p := range patterns {
+		if strings.Contains(lower, strings.ToLower(p)) {
+			return true
+		}
+	}
+	return false
 }
 
 func classifyResponse(rctx types.ResultContext, url string, statusCode int) types.Result {

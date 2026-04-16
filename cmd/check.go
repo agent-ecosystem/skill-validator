@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/agent-ecosystem/skill-validator/links"
 	"github.com/agent-ecosystem/skill-validator/orchestrate"
 	"github.com/agent-ecosystem/skill-validator/structure"
 	"github.com/agent-ecosystem/skill-validator/types"
@@ -15,6 +16,7 @@ import (
 var (
 	checkOnly                  []string
 	checkSkip                  []string
+	checkIgnoreLinks           []string
 	perFileCheck               bool
 	checkSkipOrphans           bool
 	strictCheck                bool
@@ -44,6 +46,8 @@ func init() {
 		"allow files at the skill root without warnings and treat them as standard content for token counting")
 	checkCmd.Flags().StringSliceVar(&checkAllowDirs, "allow-dirs", nil,
 		"comma-separated list of directory names to accept without warnings (e.g. --allow-dirs=evals,testing)")
+	checkCmd.Flags().StringSliceVar(&checkIgnoreLinks, "ignore-link", nil,
+		"URL patterns to skip in link validation (case-insensitive substring match; repeatable or comma-separated, e.g. --ignore-link=github.com/myorg,localhost)")
 	rootCmd.AddCommand(checkCmd)
 }
 
@@ -77,6 +81,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 			AllowFlatLayouts:      checkAllowFlatLayouts,
 			AllowDirs:             checkAllowDirs,
 		},
+		LinksOpts: links.Options{IgnorePatterns: checkIgnoreLinks},
 	}
 	eopts := exitOpts{strict: strictCheck}
 	ctx := context.Background()
