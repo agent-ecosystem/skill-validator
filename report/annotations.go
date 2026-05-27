@@ -4,9 +4,24 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 
 	"github.com/agent-ecosystem/skill-validator/types"
 )
+
+func escapeAnnotationData(s string) string {
+	s = strings.ReplaceAll(s, "%", "%25")
+	s = strings.ReplaceAll(s, "\r", "%0D")
+	s = strings.ReplaceAll(s, "\n", "%0A")
+	return s
+}
+
+func escapeAnnotationProperty(s string) string {
+	s = escapeAnnotationData(s)
+	s = strings.ReplaceAll(s, ":", "%3A")
+	s = strings.ReplaceAll(s, ",", "%2C")
+	return s
+}
 
 // PrintAnnotations writes GitHub Actions workflow command annotations for
 // errors and warnings in the report. Pass and Info results are skipped.
@@ -39,24 +54,21 @@ func formatAnnotation(skillDir string, res types.Result, workDir string) string 
 		return ""
 	}
 
-	// Build the parameters string
 	var params string
 	if res.File != "" {
-		// Compose path relative to the working directory so GitHub Actions
-		// can map annotations to files in the PR diff view.
 		absPath := filepath.Join(skillDir, res.File)
 		relPath, err := filepath.Rel(workDir, absPath)
 		if err != nil {
-			relPath = absPath // fall back to absolute if Rel fails
+			relPath = absPath
 		}
-		params = fmt.Sprintf(" file=%s", filepath.ToSlash(relPath))
+		params = fmt.Sprintf(" file=%s", escapeAnnotationProperty(filepath.ToSlash(relPath)))
 		if res.Line > 0 {
 			params += fmt.Sprintf(",line=%d", res.Line)
 		}
-		params += fmt.Sprintf(",title=%s", res.Category)
+		params += fmt.Sprintf(",title=%s", escapeAnnotationProperty(res.Category))
 	} else {
-		params = fmt.Sprintf(" title=%s", res.Category)
+		params = fmt.Sprintf(" title=%s", escapeAnnotationProperty(res.Category))
 	}
 
-	return fmt.Sprintf("::%s%s::%s", cmd, params, res.Message)
+	return fmt.Sprintf("::%s%s::%s", cmd, params, escapeAnnotationData(res.Message))
 }

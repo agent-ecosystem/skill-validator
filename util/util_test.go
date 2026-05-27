@@ -1,7 +1,11 @@
 package util
 
 import (
+	"errors"
 	"math"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -81,5 +85,54 @@ func TestSortedKeys(t *testing.T) {
 	empty := SortedKeys(map[string]int{})
 	if len(empty) != 0 {
 		t.Errorf("SortedKeys(empty) = %v, want []", empty)
+	}
+}
+
+func TestSafeReadFile(t *testing.T) {
+	dir := t.TempDir()
+
+	regular := filepath.Join(dir, "regular.txt")
+	if err := os.WriteFile(regular, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := SafeReadFile(regular)
+	if err != nil {
+		t.Fatalf("SafeReadFile(regular): %v", err)
+	}
+	if string(got) != "hello" {
+		t.Errorf("SafeReadFile(regular) = %q, want %q", got, "hello")
+	}
+
+	if !IsRegularFile(regular) {
+		t.Errorf("IsRegularFile(regular) = false, want true")
+	}
+
+	if runtime.GOOS != "windows" {
+		secret := filepath.Join(dir, "secret.txt")
+		if err := os.WriteFile(secret, []byte("PRIVATE"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		link := filepath.Join(dir, "link.txt")
+		if err := os.Symlink(secret, link); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := SafeReadFile(link); !errors.Is(err, ErrUnsafeFile) {
+			t.Errorf("SafeReadFile(symlink) error = %v, want ErrUnsafeFile", err)
+		}
+		if IsRegularFile(link) {
+			t.Errorf("IsRegularFile(symlink) = true, want false")
+		}
+	}
+
+	missing := filepath.Join(dir, "missing.txt")
+	if _, err := SafeReadFile(missing); err == nil {
+		t.Errorf("SafeReadFile(missing) error = nil, want non-nil")
+	}
+	if IsRegularFile(missing) {
+		t.Errorf("IsRegularFile(missing) = true, want false")
+	}
+
+	if _, err := SafeReadFile(dir); !errors.Is(err, ErrUnsafeFile) {
+		t.Errorf("SafeReadFile(dir) error = %v, want ErrUnsafeFile", err)
 	}
 }

@@ -9,6 +9,11 @@ import (
 	"github.com/agent-ecosystem/skill-validator/types"
 )
 
+const (
+	maxConcurrentLinkChecks = 16
+	maxLinksPerSkill        = 500
+)
+
 type linkResult struct {
 	url    string
 	result types.Result
@@ -29,9 +34,7 @@ func CheckLinks(ctx context.Context, dir, body string) []types.Result {
 		wg        sync.WaitGroup
 	)
 
-	// Collect HTTP links only
 	for _, link := range allLinks {
-		// Skip template URLs containing {placeholder} variables (RFC 6570 URI Templates)
 		if strings.Contains(link, "{") {
 			continue
 		}
@@ -44,16 +47,22 @@ func CheckLinks(ctx context.Context, dir, body string) []types.Result {
 		return nil
 	}
 
-	// Shared client for connection reuse across concurrent checks.
-	// The client uses a safe transport that blocks requests to private IPs.
-	client := newHTTPClient()
+	truncated := false
+	if len(httpLinks) > maxLinksPerSkill {
+		httpLinks = httpLinks[:maxLinksPerSkill]
+		truncated = true
+	}
 
-	// Check HTTP links concurrently
+	client := newHTTPClient()
+	sem := make(chan struct{}, maxConcurrentLinkChecks)
+
 	httpResults := make([]linkResult, len(httpLinks))
 	for i, link := range httpLinks {
 		wg.Add(1)
+		sem <- struct{}{}
 		go func(idx int, url string) {
 			defer wg.Done()
+			defer func() { <-sem }()
 			r := checkHTTPLink(rctx, client, url)
 			mu.Lock()
 			httpResults[idx] = linkResult{url: url, result: r}
@@ -64,6 +73,13 @@ func CheckLinks(ctx context.Context, dir, body string) []types.Result {
 
 	for _, hr := range httpResults {
 		results = append(results, hr.result)
+	}
+
+	if truncated {
+		results = append(results, rctx.Warnf(
+			"link checking truncated at %d URLs to bound resource use; remaining links not validated",
+			maxLinksPerSkill,
+		))
 	}
 
 	return results

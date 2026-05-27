@@ -9,3 +9,5 @@ coverage.out
 
 # LLM-as-judge scores
 .score_cache/
+
+vendor/

@@ -76,6 +76,9 @@ func NewClient(opts ClientOptions) (LLMClient, error) {
 		if opts.BaseURL != "" {
 			baseURL = strings.TrimRight(opts.BaseURL, "/")
 		}
+		if err := validateLLMBaseURL(baseURL); err != nil {
+			return nil, err
+		}
 		return &anthropicClient{apiKey: opts.APIKey, model: model, baseURL: baseURL, maxTokens: maxResp}, nil
 	case "openai":
 		model := opts.Model
@@ -87,10 +90,39 @@ func NewClient(opts ClientOptions) (LLMClient, error) {
 			baseURL = "https://api.openai.com/v1"
 		}
 		baseURL = strings.TrimRight(baseURL, "/")
+		if err := validateLLMBaseURL(baseURL); err != nil {
+			return nil, err
+		}
 		return &openaiClient{apiKey: opts.APIKey, baseURL: baseURL, model: model, maxTokensStyle: opts.MaxTokensStyle, maxTokens: maxResp, orgID: opts.OrgID, projectID: opts.ProjectID}, nil
 	default:
 		return nil, fmt.Errorf("unsupported provider %q (use \"anthropic\", \"openai\", or \"claude-cli\")", opts.Provider)
 	}
+}
+
+// AllowInsecureBaseURL, when true, permits non-https base URLs (for local
+// development against Ollama/vLLM/etc.). Callers must opt in explicitly because
+// non-https endpoints will receive the bearer/x-api-key header in plaintext.
+var AllowInsecureBaseURL = false
+
+func validateLLMBaseURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid base URL %q: %w", raw, err)
+	}
+	if u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("invalid base URL %q: must include scheme and host", raw)
+	}
+	if u.Scheme != "https" {
+		if AllowInsecureBaseURL && (u.Scheme == "http") {
+			return nil
+		}
+		return fmt.Errorf(
+			"refusing non-https base URL %q: API keys would be sent in plaintext; "+
+				"set judge.AllowInsecureBaseURL = true to override for local development",
+			raw,
+		)
+	}
+	return nil
 }
 
 // --- Anthropic client ---
@@ -357,7 +389,7 @@ func (c *claudeCLIClient) buildArgs(systemPrompt, userContent string) []string {
 	if systemPrompt != "" {
 		args = append(args, "--system-prompt", systemPrompt)
 	}
-	args = append(args, userContent)
+	args = append(args, "--", userContent)
 	return args
 }
 

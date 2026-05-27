@@ -6,10 +6,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestMain(m *testing.M) {
+	AllowInsecureBaseURL = true
+	os.Exit(m.Run())
+}
 
 // stubLookPath replaces the lookPath variable for the duration of a test,
 // restoring the original when the test completes.
@@ -82,7 +88,7 @@ func TestClaudeCLIBuildArgs(t *testing.T) {
 
 	t.Run("with system prompt", func(t *testing.T) {
 		args := c.buildArgs("you are a judge", "score this")
-		want := []string{"-p", "--output-format", "text", "--model", "sonnet", "--system-prompt", "you are a judge", "score this"}
+		want := []string{"-p", "--output-format", "text", "--model", "sonnet", "--system-prompt", "you are a judge", "--", "score this"}
 		if len(args) != len(want) {
 			t.Fatalf("got %d args, want %d: %v", len(args), len(want), args)
 		}
@@ -100,9 +106,27 @@ func TestClaudeCLIBuildArgs(t *testing.T) {
 				t.Error("--system-prompt should not be present when system prompt is empty")
 			}
 		}
-		// Last arg should be the user content
 		if args[len(args)-1] != "score this" {
 			t.Errorf("last arg = %q, want %q", args[len(args)-1], "score this")
+		}
+		if args[len(args)-2] != "--" {
+			t.Errorf("expected '--' before user content, got %q", args[len(args)-2])
+		}
+	})
+
+	t.Run("flag-like user content cannot be parsed as option", func(t *testing.T) {
+		args := c.buildArgs("", "--dangerous-flag=value")
+		var sawSeparator bool
+		for i, a := range args {
+			if a == "--" {
+				sawSeparator = true
+				if i != len(args)-2 {
+					t.Errorf("'--' should precede the user content; got args=%v", args)
+				}
+			}
+		}
+		if !sawSeparator {
+			t.Errorf("expected '--' separator in args=%v", args)
 		}
 	})
 }
@@ -140,6 +164,49 @@ func TestUseMaxCompletionTokens(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewClient_RefusesInsecureBaseURLByDefault(t *testing.T) {
+	prev := AllowInsecureBaseURL
+	AllowInsecureBaseURL = false
+	t.Cleanup(func() { AllowInsecureBaseURL = prev })
+
+	cases := []struct {
+		name     string
+		provider string
+		baseURL  string
+	}{
+		{"openai http", "openai", "http://attacker.example/v1"},
+		{"anthropic http", "anthropic", "http://attacker.example"},
+		{"openai garbage scheme", "openai", "gopher://attacker.example"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NewClient(ClientOptions{Provider: tc.provider, APIKey: "k", BaseURL: tc.baseURL})
+			if err == nil {
+				t.Fatalf("expected error for insecure base URL %q", tc.baseURL)
+			}
+			if !strings.Contains(err.Error(), "refusing") && !strings.Contains(err.Error(), "invalid base URL") {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+
+	t.Run("https accepted", func(t *testing.T) {
+		_, err := NewClient(ClientOptions{Provider: "openai", APIKey: "k", BaseURL: "https://api.openai.com/v1"})
+		if err != nil {
+			t.Errorf("https base URL rejected: %v", err)
+		}
+	})
+
+	t.Run("http accepted when AllowInsecureBaseURL set", func(t *testing.T) {
+		AllowInsecureBaseURL = true
+		defer func() { AllowInsecureBaseURL = false }()
+		_, err := NewClient(ClientOptions{Provider: "openai", APIKey: "k", BaseURL: "http://localhost:11434/v1"})
+		if err != nil {
+			t.Errorf("http base URL rejected after opt-in: %v", err)
+		}
+	})
 }
 
 func TestIsOpenAIHost(t *testing.T) {

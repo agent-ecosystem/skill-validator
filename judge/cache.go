@@ -62,7 +62,7 @@ func GetCached(cacheDir, key string) (*CachedResult, bool) {
 
 // SaveCache writes a result to the cache directory.
 func SaveCache(cacheDir, key string, result *CachedResult) error {
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
 		return fmt.Errorf("creating cache directory: %w", err)
 	}
 
@@ -72,7 +72,7 @@ func SaveCache(cacheDir, key string, result *CachedResult) error {
 	}
 
 	path := filepath.Join(cacheDir, key+".json")
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o600)
 }
 
 // ListCached reads all cached results from the cache directory.

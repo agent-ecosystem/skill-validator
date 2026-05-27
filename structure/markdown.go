@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/agent-ecosystem/skill-validator/types"
+	"github.com/agent-ecosystem/skill-validator/util"
 )
 
 // CheckMarkdown validates markdown structure in the skill.
@@ -32,10 +33,13 @@ func CheckMarkdown(dir, body string) []types.Result {
 		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
+		if !entry.Type().IsRegular() {
+			continue
+		}
 		if !strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(refsDir, entry.Name()))
+		data, err := util.SafeReadFile(filepath.Join(refsDir, entry.Name()))
 		if err != nil {
 			continue
 		}
