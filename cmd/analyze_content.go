@@ -7,7 +7,10 @@ import (
 	"github.com/agent-ecosystem/skill-validator/types"
 )
 
-var perFileContent bool
+var (
+	perFileContent       bool
+	imperativeConfigPath string
+)
 
 var analyzeContentCmd = &cobra.Command{
 	Use:   "content <path>",
@@ -19,6 +22,7 @@ var analyzeContentCmd = &cobra.Command{
 
 func init() {
 	analyzeContentCmd.Flags().BoolVar(&perFileContent, "per-file", false, "show per-file reference analysis")
+	analyzeContentCmd.Flags().StringVar(&imperativeConfigPath, "imperative-config", "", "path to imperative detection config YAML (default: embedded multilingual config)")
 	analyzeCmd.AddCommand(analyzeContentCmd)
 }
 
@@ -30,12 +34,12 @@ func runAnalyzeContent(cmd *cobra.Command, args []string) error {
 
 	switch mode {
 	case types.SingleSkill:
-		r := orchestrate.RunContentAnalysis(dirs[0])
+		r := orchestrate.RunContentAnalysisWithConfig(dirs[0], imperativeConfigPath)
 		return outputReportWithPerFile(r, perFileContent)
 	case types.MultiSkill:
 		mr := &types.MultiReport{}
 		for _, dir := range dirs {
-			r := orchestrate.RunContentAnalysis(dir)
+			r := orchestrate.RunContentAnalysisWithConfig(dir, imperativeConfigPath)
 			mr.Skills = append(mr.Skills, r)
 			mr.Errors += r.Errors
 			mr.Warnings += r.Warnings
