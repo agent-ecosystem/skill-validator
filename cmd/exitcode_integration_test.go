@@ -49,6 +49,15 @@ func fixture(t *testing.T, name string) string {
 	return p
 }
 
+func example(t *testing.T, name string) string {
+	t.Helper()
+	p := filepath.Join(moduleRoot(t), "examples", name)
+	if _, err := os.Stat(p); err != nil {
+		t.Fatalf("example %q not found: %v", name, err)
+	}
+	return p
+}
+
 func TestExitCodes(t *testing.T) {
 	bin := buildBinary(t)
 
@@ -91,6 +100,11 @@ func TestExitCodes(t *testing.T) {
 			name:     "validate structure warnings-only exits 2",
 			args:     []string{"validate", "structure", fixture(t, "warnings-only-skill")},
 			wantCode: 2,
+		},
+		{
+			name:     "social source example exits 0",
+			args:     []string{"check", "--only=structure", example(t, "social-source-review")},
+			wantCode: 0,
 		},
 	}
 

@@ -8,6 +8,8 @@ your project.
   your coding agent before requesting a human review.
 - **ci** — Use when publishing skills or adding them to a project to enforce
   a minimum quality bar on every pull request.
+- **social-source-review**: Validate a realistic skill that gates X/Twitter
+  source review before social actions.
 
 ## review-skill
 
@@ -78,3 +80,16 @@ use, or before adding skills to your own repo or personal coding agent setup.
 
 The workflow installs skill-validator from source on each run. No API keys or
 external services are required; it runs structural validation only.
+
+## social-source-review
+
+A compact sample Agent Skill package that shows how social-data skills can keep
+read-only source review separate from approval-gated write actions. It uses
+TweetClaw as the concrete X/Twitter source tool and includes a checklist for
+credentials, evidence, and human approval boundaries.
+
+Run:
+
+```sh
+go run ./cmd/skill-validator check examples/social-source-review
+```
