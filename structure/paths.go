@@ -27,6 +27,19 @@ func NormalizeRelativePaths(paths []string) ([]string, error) {
 	return normalized, nil
 }
 
+func normalizedRelativePaths(paths []string) []string {
+	normalized := make([]string, 0, len(paths))
+	seen := make(map[string]bool, len(paths))
+	for _, raw := range paths {
+		value, err := normalizeRelativePath(raw)
+		if err == nil && !seen[value] {
+			normalized = append(normalized, value)
+			seen[value] = true
+		}
+	}
+	return normalized
+}
+
 func normalizeRelativePath(raw string) (string, error) {
 	value := strings.TrimSpace(strings.ReplaceAll(raw, `\`, "/"))
 	if value == "" {

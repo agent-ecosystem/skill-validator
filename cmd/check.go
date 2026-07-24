@@ -22,6 +22,7 @@ var (
 	checkAllowFlatLayouts      bool
 	checkAllowDirs             []string
 	checkAllowNestedPaths      []string
+	checkExcludeTokenPaths     []string
 )
 
 var checkCmd = &cobra.Command{
@@ -47,6 +48,8 @@ func init() {
 		"comma-separated list of directory names to accept without warnings (e.g. --allow-dirs=evals,testing)")
 	checkCmd.Flags().StringSliceVar(&checkAllowNestedPaths, "allow-nested-paths", nil,
 		"comma-separated skill-relative paths where deep nesting is allowed (e.g. --allow-nested-paths=assets/components)")
+	checkCmd.Flags().StringSliceVar(&checkExcludeTokenPaths, "exclude-token-paths", nil,
+		"comma-separated skill-relative subtrees to exclude from non-standard token accounting (e.g. --exclude-token-paths=site)")
 	rootCmd.AddCommand(checkCmd)
 }
 
@@ -67,6 +70,11 @@ func runCheck(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid --allow-nested-paths: %w", err)
 	}
 
+	excludeTokenPaths, err := structure.NormalizeRelativePaths(checkExcludeTokenPaths)
+	if err != nil {
+		return fmt.Errorf("invalid --exclude-token-paths: %w", err)
+	}
+
 	enabled, err := resolveCheckGroups(checkOnly, checkSkip)
 	if err != nil {
 		return err
@@ -85,6 +93,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 			AllowFlatLayouts:      checkAllowFlatLayouts,
 			AllowDirs:             checkAllowDirs,
 			AllowNestedPaths:      allowNestedPaths,
+			ExcludeTokenPaths:     excludeTokenPaths,
 		},
 	}
 	eopts := exitOpts{strict: strictCheck}

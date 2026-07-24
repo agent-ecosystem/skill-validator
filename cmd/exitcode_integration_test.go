@@ -186,6 +186,13 @@ func TestSliceFlags(t *testing.T) {
 			wantStdout: "deep nesting allowed: assets/components/",
 			noStdout:   "deep nesting detected:",
 		},
+		{
+			name:       "check exclude-token-paths removes selected subtree only",
+			args:       []string{"check", "--only=structure", "--skip-orphans", "--allow-dirs=site,site-extra", "--exclude-token-paths=site", fixture(t, "token-exclusion-skill")},
+			wantCode:   0,
+			wantStdout: "site-extra/keep.md",
+			noStdout:   "site/generated.md",
+		},
 	}
 
 	for _, tt := range tests {
@@ -228,6 +235,24 @@ func TestAllowNestedPathsInvalidPath(t *testing.T) {
 	}
 }
 
+func TestExcludeTokenPathsInvalidPath(t *testing.T) {
+	bin := buildBinary(t)
+
+	for _, args := range [][]string{
+		{"validate", "structure", "--exclude-token-paths=/site", fixture(t, "valid-skill")},
+		{"check", "--exclude-token-paths=../site", fixture(t, "valid-skill")},
+	} {
+		cmd := exec.Command(bin, args...)
+		out, _ := cmd.CombinedOutput()
+		if got := cmd.ProcessState.ExitCode(); got != 3 {
+			t.Errorf("exit code = %d, want 3 (args: %v)\noutput: %s", got, args, out)
+		}
+		if !strings.Contains(string(out), "invalid --exclude-token-paths") {
+			t.Errorf("expected invalid path error, got:\n%s", out)
+		}
+	}
+}
+
 func TestAllowNestedPathsOutputFormats(t *testing.T) {
 	bin := buildBinary(t)
 
@@ -251,6 +276,38 @@ func TestAllowNestedPathsOutputFormats(t *testing.T) {
 			}
 			if strings.Contains(string(out), "deep nesting detected:") {
 				t.Errorf("unexpected deep-nesting warning in %s output:\n%s", format, out)
+			}
+		})
+	}
+}
+
+func TestExcludeTokenPathsOutputFormats(t *testing.T) {
+	bin := buildBinary(t)
+
+	for _, format := range []string{"text", "json", "markdown"} {
+		t.Run(format, func(t *testing.T) {
+			args := []string{
+				"validate", "structure",
+				"--skip-orphans",
+				"--allow-dirs=site,site-extra",
+				"--exclude-token-paths=site",
+				"--output=" + format,
+				fixture(t, "token-exclusion-skill"),
+			}
+			cmd := exec.Command(bin, args...)
+			out, _ := cmd.CombinedOutput()
+
+			if got := cmd.ProcessState.ExitCode(); got != 0 {
+				t.Errorf("exit code = %d, want 0\noutput: %s", got, out)
+			}
+			if !strings.Contains(string(out), "excluded from token accounting: site") {
+				t.Errorf("expected exclusion info in %s output, got:\n%s", format, out)
+			}
+			if strings.Contains(string(out), "site/generated.md") {
+				t.Errorf("excluded file appeared in %s output:\n%s", format, out)
+			}
+			if !strings.Contains(string(out), "site-extra/keep.md") {
+				t.Errorf("non-excluded sibling missing from %s output:\n%s", format, out)
 			}
 		})
 	}
