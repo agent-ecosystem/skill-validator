@@ -35,6 +35,7 @@ Spec compliance is table stakes. `skill-validator` goes further: it checks that 
   - [Structure validation](#structure-validation-validate-structure)
     - [Flat skill layouts](#flat-skill-layouts)
     - [Allowing non-standard directories](#allowing-non-standard-directories)
+    - [Allowing nesting at specific paths](#allowing-nesting-at-specific-paths)
   - [Link validation](#link-validation-validate-links)
   - [Content analysis](#content-analysis-analyze-content)
   - [Contamination analysis](#contamination-analysis-analyze-contamination)
@@ -188,6 +189,7 @@ skill-validator validate structure --strict <path>
 skill-validator validate structure --allow-extra-frontmatter <path>
 skill-validator validate structure --allow-flat-layouts <path>
 skill-validator validate structure --allow-dirs=evals,testing <path>
+skill-validator validate structure --allow-nested-paths=assets/components <path>
 ```
 
 Checks spec compliance: directory structure, frontmatter fields, token limits, skill ratio, code fence integrity, internal link validity, and orphan file detection.
@@ -199,6 +201,7 @@ Checks spec compliance: directory structure, frontmatter fields, token limits, s
 | `--allow-extra-frontmatter` | Suppress warnings for non-spec frontmatter fields (e.g. `user-invokable`). Standard fields are still fully validated |
 | `--allow-flat-layouts` | Allow files at the skill root without warnings (see [Flat skill layouts](#flat-skill-layouts)) |
 | `--allow-dirs=evals,testing` | Accept specific non-standard directories without warnings (see [Allowing non-standard directories](#allowing-non-standard-directories)) |
+| `--allow-nested-paths=assets/components` | Allow deep nesting only within specific skill-relative paths (see [Allowing nesting at specific paths](#allowing-nesting-at-specific-paths)) |
 
 ```
 Validating skill: my-skill/
@@ -296,6 +299,7 @@ skill-validator check --strict <path>
 skill-validator check --allow-extra-frontmatter <path>
 skill-validator check --allow-flat-layouts <path>
 skill-validator check --allow-dirs=evals,testing <path>
+skill-validator check --allow-nested-paths=assets/components <path>
 ```
 
 Runs all checks (structure + links + content + contamination).
@@ -310,6 +314,7 @@ Runs all checks (structure + links + content + contamination).
 | `--allow-extra-frontmatter` | Suppress warnings for non-spec frontmatter fields |
 | `--allow-flat-layouts` | Allow files at the skill root without warnings (see [Flat skill layouts](#flat-skill-layouts)) |
 | `--allow-dirs=evals,testing` | Accept specific non-standard directories without warnings (see [Allowing non-standard directories](#allowing-non-standard-directories)) |
+| `--allow-nested-paths=assets/components` | Allow deep nesting only within specific skill-relative paths (see [Allowing nesting at specific paths](#allowing-nesting-at-specific-paths)) |
 
 Valid check groups: `structure`, `links`, `content`, `contamination`.
 
@@ -766,6 +771,19 @@ Directories not in the allow list still produce the standard warning with file c
 
 > [!NOTE]
 > Allowing a directory suppresses validator warnings but does not change how agent platforms handle the directory. Files in non-standard directories may not be discovered during skill activation, or may load into agent context unexpectedly. If you're distributing skills across platforms, consider whether those files belong in `references/` or `assets/` instead.
+
+**Allowing nesting at specific paths**
+
+Some recognized directories intentionally contain self-contained bundles. For example, `assets/components/<name>/` may group templates and supporting files by component. Use `--allow-nested-paths` to suppress only the deep-nesting warning for an explicitly selected subtree:
+
+```
+skill-validator validate structure --allow-nested-paths=assets/components my-skill/
+skill-validator check --allow-nested-paths=assets/components,assets/themes my-skill/
+```
+
+Paths are relative to the skill root. The flag accepts a comma-separated list or can be repeated, normalizes `/` and `\` separators, and rejects absolute paths or paths that escape the skill root. Matching observes path boundaries: allowing `assets/components` does not allow `assets/components-extra`.
+
+This option affects only deep-nesting warnings. Structure checks outside the selected subtree and all frontmatter, orphan, token, Markdown, and link checks continue unchanged. When a nesting warning is suppressed, the report includes an informational result identifying the allowed path.
 
 ### Link validation (`validate links`)
 

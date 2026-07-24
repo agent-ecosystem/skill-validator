@@ -21,6 +21,7 @@ var (
 	checkAllowExtraFrontmatter bool
 	checkAllowFlatLayouts      bool
 	checkAllowDirs             []string
+	checkAllowNestedPaths      []string
 )
 
 var checkCmd = &cobra.Command{
@@ -44,6 +45,8 @@ func init() {
 		"allow files at the skill root without warnings and treat them as standard content for token counting")
 	checkCmd.Flags().StringSliceVar(&checkAllowDirs, "allow-dirs", nil,
 		"comma-separated list of directory names to accept without warnings (e.g. --allow-dirs=evals,testing)")
+	checkCmd.Flags().StringSliceVar(&checkAllowNestedPaths, "allow-nested-paths", nil,
+		"comma-separated skill-relative paths where deep nesting is allowed (e.g. --allow-nested-paths=assets/components)")
 	rootCmd.AddCommand(checkCmd)
 }
 
@@ -57,6 +60,11 @@ var validGroups = map[orchestrate.CheckGroup]bool{
 func runCheck(cmd *cobra.Command, args []string) error {
 	if len(checkOnly) > 0 && len(checkSkip) > 0 {
 		return fmt.Errorf("--only and --skip are mutually exclusive")
+	}
+
+	allowNestedPaths, err := structure.NormalizeRelativePaths(checkAllowNestedPaths)
+	if err != nil {
+		return fmt.Errorf("invalid --allow-nested-paths: %w", err)
 	}
 
 	enabled, err := resolveCheckGroups(checkOnly, checkSkip)
@@ -76,6 +84,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 			AllowExtraFrontmatter: checkAllowExtraFrontmatter,
 			AllowFlatLayouts:      checkAllowFlatLayouts,
 			AllowDirs:             checkAllowDirs,
+			AllowNestedPaths:      allowNestedPaths,
 		},
 	}
 	eopts := exitOpts{strict: strictCheck}

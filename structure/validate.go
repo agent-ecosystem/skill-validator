@@ -15,6 +15,7 @@ type Options struct {
 	AllowExtraFrontmatter bool
 	AllowFlatLayouts      bool
 	AllowDirs             []string
+	AllowNestedPaths      []string
 }
 
 // ValidateMulti validates each directory and returns an aggregated report.

@@ -43,7 +43,8 @@ var knownExtraneousFiles = map[string]string{
 // for the required SKILL.md file, flags unrecognized directories and extraneous
 // root files, and warns about deep nesting in recognized directories.
 // Directories listed in opts.AllowDirs are accepted without warning and are
-// exempt from deep-nesting checks.
+// exempt from deep-nesting checks. Paths listed in opts.AllowNestedPaths are
+// exempt only from deep-nesting warnings within those subtrees.
 func CheckStructure(dir string, opts Options) []types.Result {
 	ctx := types.ResultContext{Category: "Structure"}
 	var results []types.Result
@@ -52,6 +53,14 @@ func CheckStructure(dir string, opts Options) []types.Result {
 	allowedDirs := make(map[string]bool, len(opts.AllowDirs))
 	for _, d := range opts.AllowDirs {
 		allowedDirs[d] = true
+	}
+
+	allowedNestedPaths := make([]string, 0, len(opts.AllowNestedPaths))
+	for _, p := range opts.AllowNestedPaths {
+		normalized, err := normalizeRelativePath(p)
+		if err == nil {
+			allowedNestedPaths = append(allowedNestedPaths, normalized)
+		}
 	}
 
 	// Check SKILL.md exists
@@ -109,7 +118,7 @@ func CheckStructure(dir string, opts Options) []types.Result {
 		if _, err := os.Stat(subdir); os.IsNotExist(err) {
 			continue
 		}
-		err := checkNesting(ctx, subdir, dirName)
+		err := checkNesting(ctx, subdir, dirName, allowedNestedPaths)
 		if err != nil {
 			results = append(results, err...)
 		}
@@ -158,7 +167,7 @@ func unknownDirHint(dir string) string {
 	return fmt.Sprintf("; should this be %s?", strings.Join(candidates, " or "))
 }
 
-func checkNesting(ctx types.ResultContext, dir, prefix string) []types.Result {
+func checkNesting(ctx types.ResultContext, dir, prefix string, allowedPaths []string) []types.Result {
 	var results []types.Result
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -169,7 +178,19 @@ func checkNesting(ctx types.ResultContext, dir, prefix string) []types.Result {
 			continue
 		}
 		if entry.IsDir() {
-			results = append(results, ctx.Warnf("deep nesting detected: %s/%s/", prefix, entry.Name()))
+			nestedPath := filepath.ToSlash(filepath.Join(prefix, entry.Name()))
+			allowed := false
+			for _, allowedPath := range allowedPaths {
+				if pathInSubtree(nestedPath, allowedPath) {
+					allowed = true
+					break
+				}
+			}
+			if allowed {
+				results = append(results, ctx.Infof("deep nesting allowed: %s/", nestedPath))
+				continue
+			}
+			results = append(results, ctx.Warnf("deep nesting detected: %s/", nestedPath))
 		}
 	}
 	return results
