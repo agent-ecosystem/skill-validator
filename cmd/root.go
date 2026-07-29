@@ -31,7 +31,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.Version = version
-	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "text", "output format: text, json, or markdown")
+	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "text", "output format: text, compact, json, or markdown")
 	rootCmd.PersistentFlags().BoolVar(&emitAnnotations, "emit-annotations", false, "emit GitHub Actions workflow command annotations (::error/::warning) alongside normal output")
 }
 

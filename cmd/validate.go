@@ -38,6 +38,8 @@ func outputReportWithExitOpts(r *types.Report, perFile bool, opts exitOpts) erro
 		if err := report.PrintMarkdown(os.Stdout, r, perFile); err != nil {
 			return fmt.Errorf("writing markdown: %w", err)
 		}
+	case "compact":
+		report.PrintCompact(os.Stdout, r)
 	default:
 		report.Print(os.Stdout, r, perFile)
 	}
@@ -69,6 +71,8 @@ func outputMultiReportWithExitOpts(mr *types.MultiReport, perFile bool, opts exi
 		if err := report.PrintMultiMarkdown(os.Stdout, mr, perFile); err != nil {
 			return fmt.Errorf("writing markdown: %w", err)
 		}
+	case "compact":
+		report.PrintMultiCompact(os.Stdout, mr)
 	default:
 		report.PrintMulti(os.Stdout, mr, perFile)
 	}

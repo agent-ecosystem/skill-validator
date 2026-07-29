@@ -24,6 +24,7 @@ Spec compliance is table stakes. `skill-validator` goes further: it checks that 
   - [score evaluate](#score-evaluate)
   - [score report](#score-report)
 - [Output Formats](#output-formats)
+  - [Compact output](#compact-output)
   - [JSON output](#json-output)
   - [Markdown output](#markdown-output)
   - [GitHub Actions annotations](#github-actions-annotations)
@@ -435,7 +436,33 @@ The `--compare` flag is useful for understanding how different models perceive y
 
 ## Output Formats
 
-All commands accept `-o text` (default), `-o json`, or `-o markdown` for output format. Use `--emit-annotations` with any format to emit GitHub Actions workflow annotations alongside normal output.
+All commands accept `-o text` (default), `-o compact`, `-o json`, or `-o markdown` for output format. Use `--emit-annotations` with any format to emit GitHub Actions workflow annotations alongside normal output.
+
+### Compact output
+
+The default text output prints every passing check, token counts, and the
+analysis sections for each skill, which is a lot to read when you only want to
+know what needs fixing. Use `-o compact` to reduce each skill to a single line,
+with its warnings and errors listed beneath it:
+
+```
+skill-validator check -o compact <path>
+```
+
+```
+⚠ skills/algorithmic-art: 1 warning
+    ⚠ SKILL.md body is 5233 tokens (spec recommends < 5000)
+✓ skills/brand-guidelines: passed
+✓ skills/data-cleaning: passed
+✓ skills/pdf-processing: passed
+
+4 skills validated: all passed
+Total: 1 warning
+```
+
+Passing checks, informational findings, token counts, and the content and
+contamination analysis sections are omitted. Only the display changes: error and
+warning counts, the summary, and exit codes are identical to the full report.
 
 ### JSON output
 
