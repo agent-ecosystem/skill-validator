@@ -6,7 +6,6 @@ package content
 import (
 	"regexp"
 	"strings"
-	"sync"
 	"unicode"
 
 	"github.com/agent-ecosystem/skill-validator/types"
@@ -46,35 +45,17 @@ var (
 	listItemPattern    = regexp.MustCompile(`(?m)^[\s]*[-*+]\s+|^\s*\d+\.\s+`)
 )
 
-// defaultImperativeVerbs is the fallback English verb set used when no config
-// is loaded. It preserves backward compatibility with the original hardcoded set.
-var defaultImperativeVerbs = map[string]bool{
-	"use": true, "run": true, "create": true, "add": true, "set": true,
-	"install": true, "configure": true, "write": true, "read": true,
-	"check": true, "verify": true, "make": true, "build": true, "test": true,
-	"ensure": true, "include": true, "remove": true, "delete": true,
-	"update": true, "call": true, "import": true, "export": true,
-	"define": true, "implement": true, "return": true, "pass": true,
-	"handle": true, "parse": true, "generate": true, "format": true,
-	"validate": true, "convert": true, "follow": true, "apply": true,
-	"start": true, "stop": true, "avoid": true, "keep": true, "do": true,
-	"execute": true, "open": true, "close": true, "save": true, "load": true,
-	"send": true, "receive": true,
-}
-
 // imperativeDetector handles multilingual imperative sentence detection.
 type imperativeDetector struct {
-	mu  sync.RWMutex
 	cfg *ImperativeConfig
 
 	// Pre-compiled detection data per language.
-	verbSets   map[string]map[string]bool  // lang -> verb set
-	keywordRes map[string][]*regexp.Regexp // lang -> keyword regexps
-	splitRes   map[string]*regexp.Regexp   // lang -> sentence split regexp
+	verbSets map[string]map[string]bool // lang -> verb set
+	keywords map[string][]string        // lang -> keywords matched anywhere in a sentence
 }
 
-// globalDetector is the package-level imperative detector instance.
-var globalDetector = newImperativeDetector(nil)
+// defaultDetector is built once from the embedded default config and never mutated.
+var defaultDetector = newImperativeDetector(nil)
 
 // newImperativeDetector creates a new detector from the given config.
 // If cfg is nil, the embedded default config is used.
@@ -83,49 +64,19 @@ func newImperativeDetector(cfg *ImperativeConfig) *imperativeDetector {
 		cfg = DefaultImperativeConfig()
 	}
 	d := &imperativeDetector{
-		cfg:        cfg,
-		verbSets:   make(map[string]map[string]bool),
-		keywordRes: make(map[string][]*regexp.Regexp),
-		splitRes:   make(map[string]*regexp.Regexp),
+		cfg:      cfg,
+		verbSets: make(map[string]map[string]bool),
+		keywords: make(map[string][]string),
 	}
 	for lang, rules := range cfg.Languages {
-		// Build verb set
 		vs := make(map[string]bool, len(rules.Verbs))
 		for _, v := range rules.Verbs {
 			vs[strings.ToLower(v)] = true
 		}
 		d.verbSets[lang] = vs
-
-		// Build keyword regexps (match as substring anywhere in sentence)
-		for _, kw := range rules.Keywords {
-			re := regexp.MustCompile(regexp.QuoteMeta(kw))
-			d.keywordRes[lang] = append(d.keywordRes[lang], re)
-		}
-
-		// Build per-language sentence split pattern
-		if rules.SentenceSplitPattern != "" {
-			d.splitRes[lang] = regexp.MustCompile(rules.SentenceSplitPattern)
-		}
+		d.keywords[lang] = append(d.keywords[lang], rules.Keywords...)
 	}
 	return d
-}
-
-// SetImperativeConfig replaces the global detector's configuration.
-// This is safe to call from any goroutine.
-func SetImperativeConfig(cfg *ImperativeConfig) {
-	globalDetector.mu.Lock()
-	defer globalDetector.mu.Unlock()
-	newD := newImperativeDetector(cfg)
-	globalDetector.verbSets = newD.verbSets
-	globalDetector.keywordRes = newD.keywordRes
-	globalDetector.splitRes = newD.splitRes
-	globalDetector.cfg = newD.cfg
-}
-
-// ReloadImperativeConfig reloads the imperative config from the given path.
-// If path is empty, the standard lookup order is used.
-func ReloadImperativeConfig(path string) {
-	SetImperativeConfig(LoadImperativeConfig(path))
 }
 
 // hasChinese returns true if the string contains any Chinese characters.
@@ -201,9 +152,6 @@ func splitEnglish(text string) []string {
 
 // isImperative checks if a sentence is imperative using all configured languages.
 func (d *imperativeDetector) isImperative(sentence string) bool {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
 	// Clean markdown formatting
 	cleaned := leadingFormatPat.ReplaceAllString(sentence, "")
 
@@ -219,15 +167,8 @@ func (d *imperativeDetector) isImperative(sentence string) bool {
 	if len(words) == 0 {
 		return false
 	}
-	firstWord := strings.ToLower(words[0])
-
-	// Check English verbs from config
-	if vs, ok := d.verbSets["en"]; ok && vs[firstWord] {
-		return true
-	}
-
-	// Fallback to hardcoded default for backward compatibility
-	return defaultImperativeVerbs[firstWord]
+	vs, ok := d.verbSets["en"]
+	return ok && vs[strings.ToLower(words[0])]
 }
 
 // isImperativeLang checks imperative detection for a specific language.
@@ -259,8 +200,8 @@ func (d *imperativeDetector) isImperativeLang(cleaned, lang string) bool {
 	}
 
 	// Check keyword match anywhere in the sentence
-	for _, re := range d.keywordRes[lang] {
-		if re.MatchString(cleaned) {
+	for _, kw := range d.keywords[lang] {
+		if strings.Contains(cleaned, kw) {
 			return true
 		}
 	}
@@ -274,17 +215,15 @@ func Analyze(content string) *types.ContentReport {
 }
 
 // AnalyzeWithConfig computes content metrics using the provided imperative
-// config. If cfg is nil, the current global detector is used.
+// detection config. If cfg is nil, the embedded default config is used.
 func AnalyzeWithConfig(content string, cfg *ImperativeConfig) *types.ContentReport {
 	if strings.TrimSpace(content) == "" {
 		return &types.ContentReport{}
 	}
 
-	var detector *imperativeDetector
+	detector := defaultDetector
 	if cfg != nil {
 		detector = newImperativeDetector(cfg)
-	} else {
-		detector = globalDetector
 	}
 
 	words := strings.Fields(content)

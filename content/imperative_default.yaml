@@ -101,5 +101,3 @@ languages:
       - 禁止
       - 务须
       - 需要
-    # Chinese-specific sentence split pattern (handles 。，！？ etc.)
-    sentence_split_pattern: "[。！？；\\n]+"

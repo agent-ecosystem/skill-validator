@@ -19,12 +19,6 @@ import (
 	"github.com/agent-ecosystem/skill-validator/util"
 )
 
-// SetImperativeConfigPath configures the global imperative detection config
-// path. It loads the config immediately so subsequent Analyze calls use it.
-func SetImperativeConfigPath(path string) {
-	content.ReloadImperativeConfig(path)
-}
-
 // CheckGroup identifies a category of checks that can be enabled or disabled.
 type CheckGroup string
 
@@ -139,12 +133,6 @@ func RunAllChecks(ctx context.Context, dir string, opts Options) *types.Report {
 
 // RunContentAnalysis runs content quality analysis on a single skill directory.
 func RunContentAnalysis(dir string) *types.Report {
-	return RunContentAnalysisWithConfig(dir, "")
-}
-
-// RunContentAnalysisWithConfig runs content quality analysis with an optional
-// imperative config path. If imperativeCfgPath is empty, the global config is used.
-func RunContentAnalysisWithConfig(dir string, imperativeCfgPath string) *types.Report {
 	rpt := &types.Report{SkillDir: dir}
 
 	s, err := skill.Load(dir)
@@ -155,11 +143,7 @@ func RunContentAnalysisWithConfig(dir string, imperativeCfgPath string) *types.R
 		return rpt
 	}
 
-	var contentCfg *content.ImperativeConfig
-	if imperativeCfgPath != "" {
-		contentCfg = content.LoadImperativeConfig(imperativeCfgPath)
-	}
-	rpt.ContentReport = content.AnalyzeWithConfig(s.RawContent, contentCfg)
+	rpt.ContentReport = content.Analyze(s.RawContent)
 	rpt.Results = append(rpt.Results,
 		types.ResultContext{Category: "Content"}.Pass("content analysis complete"))
 

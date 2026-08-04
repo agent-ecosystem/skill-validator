@@ -1,8 +1,6 @@
 package content
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -262,9 +260,9 @@ func TestAnalyze_ChineseNonImperative(t *testing.T) {
 	}
 }
 
-// --- Config loading tests ---
+// --- Config tests ---
 
-func TestLoadImperativeConfig_DefaultEmbedded(t *testing.T) {
+func TestDefaultImperativeConfig(t *testing.T) {
 	cfg := DefaultImperativeConfig()
 	if cfg == nil {
 		t.Fatal("expected non-nil default config")
@@ -312,60 +310,6 @@ func TestLoadImperativeConfig_DefaultEmbedded(t *testing.T) {
 	}
 }
 
-func TestLoadImperativeConfig_FromFile(t *testing.T) {
-	// Create a temp config file
-	tmpDir := t.TempDir()
-	cfgPath := filepath.Join(tmpDir, "imperative.yaml")
-	cfgContent := `languages:
-  en:
-    verbs:
-      - custom_verb
-      - another_verb
-  zh:
-    verbs:
-      - 自定义
-    keywords:
-      - 请务必
-`
-	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
-		t.Fatalf("failed to write temp config: %v", err)
-	}
-
-	cfg := LoadImperativeConfig(cfgPath)
-	if cfg == nil {
-		t.Fatal("expected non-nil config from file")
-	}
-
-	enRules := cfg.Languages["en"]
-	if len(enRules.Verbs) != 2 {
-		t.Errorf("expected 2 English verbs from file, got %d", len(enRules.Verbs))
-	}
-
-	zhRules := cfg.Languages["zh"]
-	if len(zhRules.Keywords) != 1 {
-		t.Errorf("expected 1 Chinese keyword from file, got %d", len(zhRules.Keywords))
-	}
-}
-
-func TestLoadImperativeConfig_InvalidPath(t *testing.T) {
-	cfg := LoadImperativeConfig("/nonexistent/path/imperative.yaml")
-	if cfg == nil {
-		t.Fatal("expected fallback to default config for invalid path")
-	}
-	// Should fall back to defaults
-	if len(cfg.Languages) == 0 {
-		t.Error("expected default languages as fallback")
-	}
-}
-
-func TestLoadImperativeConfig_EmptyPath(t *testing.T) {
-	// Should not panic, returns default config when no file found
-	cfg := LoadImperativeConfig("")
-	if cfg == nil {
-		t.Fatal("expected non-nil config with empty path")
-	}
-}
-
 func TestHasChinese(t *testing.T) {
 	tests := []struct {
 		input string
@@ -382,26 +326,6 @@ func TestHasChinese(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("hasChinese(%q) = %v, want %v", tt.input, got, tt.want)
 		}
-	}
-}
-
-func TestSetImperativeConfig(t *testing.T) {
-	// Save original to restore after test
-	origCfg := DefaultImperativeConfig()
-	defer SetImperativeConfig(origCfg)
-
-	customCfg := &ImperativeConfig{
-		Languages: map[string]LanguageRules{
-			"en": {Verbs: []string{"deploy"}},
-		},
-	}
-	SetImperativeConfig(customCfg)
-
-	content := "Deploy the app. Use the tool."
-	r := Analyze(content)
-
-	if r.ImperativeCount < 1 {
-		t.Errorf("expected at least 1 imperative (deploy), got %d", r.ImperativeCount)
 	}
 }
 
