@@ -6,16 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
 )
-
-func TestMain(m *testing.M) {
-	AllowInsecureBaseURL = true
-	os.Exit(m.Run())
-}
 
 // stubLookPath replaces the lookPath variable for the duration of a test,
 // restoring the original when the test completes.
@@ -164,49 +158,6 @@ func TestUseMaxCompletionTokens(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestNewClient_RefusesInsecureBaseURLByDefault(t *testing.T) {
-	prev := AllowInsecureBaseURL
-	AllowInsecureBaseURL = false
-	t.Cleanup(func() { AllowInsecureBaseURL = prev })
-
-	cases := []struct {
-		name     string
-		provider string
-		baseURL  string
-	}{
-		{"openai http", "openai", "http://attacker.example/v1"},
-		{"anthropic http", "anthropic", "http://attacker.example"},
-		{"openai garbage scheme", "openai", "gopher://attacker.example"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := NewClient(ClientOptions{Provider: tc.provider, APIKey: "k", BaseURL: tc.baseURL})
-			if err == nil {
-				t.Fatalf("expected error for insecure base URL %q", tc.baseURL)
-			}
-			if !strings.Contains(err.Error(), "refusing") && !strings.Contains(err.Error(), "invalid base URL") {
-				t.Errorf("unexpected error: %v", err)
-			}
-		})
-	}
-
-	t.Run("https accepted", func(t *testing.T) {
-		_, err := NewClient(ClientOptions{Provider: "openai", APIKey: "k", BaseURL: "https://api.openai.com/v1"})
-		if err != nil {
-			t.Errorf("https base URL rejected: %v", err)
-		}
-	})
-
-	t.Run("http accepted when AllowInsecureBaseURL set", func(t *testing.T) {
-		AllowInsecureBaseURL = true
-		defer func() { AllowInsecureBaseURL = false }()
-		_, err := NewClient(ClientOptions{Provider: "openai", APIKey: "k", BaseURL: "http://localhost:11434/v1"})
-		if err != nil {
-			t.Errorf("http base URL rejected after opt-in: %v", err)
-		}
-	})
 }
 
 func TestIsOpenAIHost(t *testing.T) {

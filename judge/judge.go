@@ -16,6 +16,7 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/agent-ecosystem/skill-validator/types"
 )
@@ -237,6 +238,10 @@ func sanitizeStringField(s string) string {
 	s = controlCharStripper.ReplaceAllString(s, "")
 	if len(s) > 1024 {
 		s = s[:1024]
+		// Back off any partial UTF-8 sequence left by the byte-boundary cut.
+		for len(s) > 0 && !utf8.ValidString(s) {
+			s = s[:len(s)-1]
+		}
 	}
 	return s
 }

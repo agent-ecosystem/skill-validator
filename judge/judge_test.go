@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/agent-ecosystem/skill-validator/types"
 )
@@ -951,6 +952,43 @@ func TestFormatUserContent_StripsInjectedDelimiters(t *testing.T) {
 	}
 	if strings.Count(result, contentOpenDelim) != 1 {
 		t.Errorf("expected exactly one opening delimiter, got %d", strings.Count(result, contentOpenDelim))
+	}
+}
+
+func TestSanitizeStringField(t *testing.T) {
+	if got := sanitizeStringField("clean text"); got != "clean text" {
+		t.Errorf("clean text altered: %q", got)
+	}
+	if got := sanitizeStringField("a\x00b\x1bc\x7fd"); got != "abcd" {
+		t.Errorf("control chars not stripped: %q", got)
+	}
+	if got := sanitizeStringField("keep\ttabs\nand newlines"); got != "keep\ttabs\nand newlines" {
+		t.Errorf("tab/newline should survive: %q", got)
+	}
+
+	long := strings.Repeat("x", 2000)
+	if got := sanitizeStringField(long); len(got) != 1024 {
+		t.Errorf("truncated len = %d, want 1024", len(got))
+	}
+
+	// A multi-byte rune straddling the 1024-byte boundary must not be split.
+	straddle := strings.Repeat("x", 1023) + "é" + strings.Repeat("y", 100)
+	got := sanitizeStringField(straddle)
+	if !utf8.ValidString(got) {
+		t.Errorf("truncation produced invalid UTF-8: %q", got[1015:])
+	}
+	if len(got) != 1023 {
+		t.Errorf("truncated len = %d, want 1023 (partial rune dropped)", len(got))
+	}
+}
+
+func TestClampScore(t *testing.T) {
+	for _, tt := range []struct{ in, want int }{
+		{-3, 0}, {0, 0}, {3, 3}, {5, 5}, {17, 5},
+	} {
+		if got := clampScore(tt.in); got != tt.want {
+			t.Errorf("clampScore(%d) = %d, want %d", tt.in, got, tt.want)
+		}
 	}
 }
 
