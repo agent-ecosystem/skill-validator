@@ -168,6 +168,13 @@ func PrintMulti(w io.Writer, mr *types.MultiReport, perFile bool) {
 		Print(w, r, perFile)
 	}
 
+	_, _ = fmt.Fprintf(w, "%s\n", strings.Repeat("━", 60))
+	printMultiSummary(w, mr)
+}
+
+// printMultiSummary writes the trailing per-skill tally and total counts shared
+// by the full and compact multi-skill renderers.
+func printMultiSummary(w io.Writer, mr *types.MultiReport) {
 	passed := 0
 	failed := 0
 	for _, r := range mr.Skills {
@@ -178,7 +185,6 @@ func PrintMulti(w io.Writer, mr *types.MultiReport, perFile bool) {
 		}
 	}
 
-	_, _ = fmt.Fprintf(w, "%s\n", strings.Repeat("━", 60))
 	_, _ = fmt.Fprintf(w, "\n%s%d skill%s validated: ", colorBold, len(mr.Skills), util.PluralS(len(mr.Skills)))
 	if failed == 0 {
 		_, _ = fmt.Fprintf(w, "%sall passed%s\n", colorGreen, colorReset)
