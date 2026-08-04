@@ -1,6 +1,7 @@
 package structure
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/agent-ecosystem/skill-validator/types"
@@ -31,6 +32,26 @@ func TestCheckOrphanFiles(t *testing.T) {
 		results := CheckOrphanFiles(dir, body, Options{})
 
 		requireResultContaining(t, results, types.Warning, "potentially unreferenced file: references/unused.md")
+	})
+
+	// Issue #85: a sibling file whose extensionless name is an ordinary word
+	// ("lint") must not be treated as referenced by prose in the same
+	// directory. The unreferenced file gets an orphan warning, not a
+	// misleading missing-extension warning.
+	t.Run("prose word matching sibling filename is not a reference", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "references/checklist.md", "Run the lint step before committing. Linting catches most problems.")
+		writeFile(t, dir, "references/lint.yml", "name: lint\non: [push]\n")
+
+		body := "See references/checklist.md for details."
+		results := CheckOrphanFiles(dir, body, Options{})
+
+		for _, r := range results {
+			if strings.Contains(r.Message, "referenced without its extension") {
+				t.Errorf("unexpected missing-extension warning: %s", r.Message)
+			}
+		}
+		requireResultContaining(t, results, types.Warning, "potentially unreferenced file: references/lint.yml")
 	})
 
 	t.Run("orphan in scripts", func(t *testing.T) {
@@ -277,10 +298,12 @@ func TestCheckOrphanFiles(t *testing.T) {
 		body := "Run scripts/main.py to start."
 		results := CheckOrphanFiles(dir, body, Options{})
 
-		// .sh file should not be resolved by Python imports; it's matched
-		// via the extensionless fallback since "data_loader" appears in the text
+		// .sh file is not resolved by Python imports ("import data_loader"
+		// refers to a Python module, not the shell script), and the bare
+		// identifier in main.py is not treated as a same-directory reference
+		// (see issue #85), so the file is reported as unreferenced.
 		requireResultContaining(t, results, types.Warning,
-			"file scripts/data_loader.sh is referenced without its extension")
+			"potentially unreferenced file: scripts/data_loader.sh")
 	})
 
 	t.Run("__init__.py bridges package imports to sibling modules", func(t *testing.T) {
@@ -394,6 +417,74 @@ func TestContainsReference(t *testing.T) {
 			t.Error("expected relative path from subdirectory to match")
 		}
 	})
+
+	t.Run("does not match inside a longer filename", func(t *testing.T) {
+		if containsReference("Configure eslint.yml before running.", "references", "references/lint.yml") {
+			t.Error("lint.yml should not match inside eslint.yml")
+		}
+		if containsReference("See references/linting.md for details.", "", "references/lint.md") {
+			t.Error("references/lint.md should not match inside references/linting.md")
+		}
+	})
+
+	t.Run("same-directory mention with extension still matches", func(t *testing.T) {
+		if !containsReference("The workflow lives in lint.yml in this directory.", "references", "references/lint.yml") {
+			t.Error("expected bare-filename mention with extension to match")
+		}
+	})
+}
+
+func TestContainsReferenceWithoutExtension(t *testing.T) {
+	// Issue #85: a same-directory sibling reduces the extensionless form to a
+	// bare word, which must not match ordinary prose.
+	t.Run("bare word in prose does not match", func(t *testing.T) {
+		text := "Run the lint step before committing. Linting catches most problems."
+		if containsReferenceWithoutExtension(text, "references", "references/lint.yml") {
+			t.Error("prose word 'lint' should not count as a reference to references/lint.yml")
+		}
+	})
+
+	t.Run("extensionless path with separator matches", func(t *testing.T) {
+		text := "Run scripts/check_fillable_fields to inspect the form."
+		if !containsReferenceWithoutExtension(text, "", "scripts/check_fillable_fields.py") {
+			t.Error("expected extensionless path with directory to match")
+		}
+	})
+
+	t.Run("extensionless path respects word boundaries", func(t *testing.T) {
+		if containsReferenceWithoutExtension("See references/linting for details.", "", "references/lint.yml") {
+			t.Error("references/lint should not match inside references/linting")
+		}
+	})
+
+	t.Run("relative extensionless path with separator matches", func(t *testing.T) {
+		text := "Run images/render to regenerate."
+		if !containsReferenceWithoutExtension(text, "references", "references/images/render.py") {
+			t.Error("expected sourceDir-relative extensionless path to match")
+		}
+	})
+}
+
+func TestContainsPathToken(t *testing.T) {
+	tests := []struct {
+		text, token string
+		want        bool
+	}{
+		{"see references/lint.yml here", "references/lint.yml", true},
+		{"references/lint.yml", "references/lint.yml", true},
+		{"(references/lint.yml)", "references/lint.yml", true},
+		{"./references/lint.yml", "references/lint.yml", true},
+		{"my-references/lint.yml", "references/lint.yml", false},
+		{"references/lint.yml2", "references/lint.yml", false},
+		{"eslint.yml", "lint.yml", false},
+		{"lint.yml.bak then lint.yml", "lint.yml", true},
+		{"", "lint.yml", false},
+	}
+	for _, tt := range tests {
+		if got := containsPathToken(tt.text, tt.token); got != tt.want {
+			t.Errorf("containsPathToken(%q, %q) = %v, want %v", tt.text, tt.token, got, tt.want)
+		}
+	}
 }
 
 func TestFilesInDir(t *testing.T) {
