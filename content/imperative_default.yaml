@@ -1,0 +1,103 @@
+# Imperative sentence detection configuration.
+# Languages are matched by the detection heuristic; the first matching
+# language's rules are used for each sentence.
+
+languages:
+  en:
+    verbs:
+      - use
+      - run
+      - create
+      - add
+      - set
+      - install
+      - configure
+      - write
+      - read
+      - check
+      - verify
+      - make
+      - build
+      - test
+      - ensure
+      - include
+      - remove
+      - delete
+      - update
+      - call
+      - import
+      - export
+      - define
+      - implement
+      - return
+      - pass
+      - handle
+      - parse
+      - generate
+      - format
+      - validate
+      - convert
+      - follow
+      - apply
+      - start
+      - stop
+      - avoid
+      - keep
+      - do
+      - execute
+      - open
+      - close
+      - save
+      - load
+      - send
+      - receive
+
+  zh:
+    # Chinese imperative verbs/phrases (matched at sentence start after
+    # stripping markdown formatting)
+    verbs:
+      - 使用
+      - 运行
+      - 创建
+      - 添加
+      - 设置
+      - 安装
+      - 配置
+      - 编写
+      - 读取
+      - 检查
+      - 验证
+      - 构建
+      - 测试
+      - 确保
+      - 删除
+      - 更新
+      - 调用
+      - 导入
+      - 导出
+      - 定义
+      - 实现
+      - 处理
+      - 解析
+      - 生成
+      - 格式化
+      - 转换
+      - 执行
+      - 打开
+      - 关闭
+      - 保存
+      - 加载
+      - 发送
+      - 接收
+    # Chinese imperative keywords (matched anywhere in the sentence)
+    keywords:
+      - 请
+      - 务必
+      - 确保
+      - 必须
+      - 一定
+      - 切勿
+      - 不要
+      - 禁止
+      - 务须
+      - 需要

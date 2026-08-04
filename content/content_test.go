@@ -1,8 +1,11 @@
 package content
 
 import (
+	"strings"
 	"testing"
 )
+
+// --- Backward compatibility tests (existing English behavior) ---
 
 func TestAnalyze_EmptyContent(t *testing.T) {
 	r := Analyze("")
@@ -165,5 +168,297 @@ Never skip validation. Ensure all checks pass.
 	}
 	if r.InstructionSpecificity <= 0 || r.InstructionSpecificity > 1.0 {
 		t.Errorf("expected specificity in (0, 1], got %f", r.InstructionSpecificity)
+	}
+}
+
+// --- Multilingual tests ---
+
+func TestAnalyze_ChineseImperativeSentences(t *testing.T) {
+	content := "使用CLI工具。运行测试。这是一个描述。创建一个新文件。"
+	r := Analyze(content)
+
+	// "使用CLI工具" → starts with 使用 (imperative verb)
+	// "运行测试" → starts with 运行 (imperative verb)
+	// "这是一个描述" → not imperative
+	// "创建一个新文件" → starts with 创建 (imperative verb)
+	if r.ImperativeCount < 3 {
+		t.Errorf("expected at least 3 imperative sentences, got %d", r.ImperativeCount)
+	}
+	if r.ImperativeRatio <= 0 {
+		t.Errorf("expected positive imperative ratio, got %f", r.ImperativeRatio)
+	}
+}
+
+func TestAnalyze_ChineseKeywordImperative(t *testing.T) {
+	content := "请确保所有测试通过。务必按照规范操作。"
+	r := Analyze(content)
+
+	if r.ImperativeCount < 2 {
+		t.Errorf("expected at least 2 imperative sentences (keyword match), got %d", r.ImperativeCount)
+	}
+}
+
+func TestAnalyze_ChineseSentenceSplitting(t *testing.T) {
+	content := "使用此工具。运行测试！确保正确？配置环境；这是说明。"
+	r := Analyze(content)
+
+	if r.SentenceCount < 4 {
+		t.Errorf("expected at least 4 sentences (Chinese split), got %d", r.SentenceCount)
+	}
+}
+
+func TestAnalyze_MixedChineseEnglish(t *testing.T) {
+	content := "Use the CLI tool. 运行测试。Create a new file. 请确保代码质量。"
+	r := Analyze(content)
+
+	if r.SentenceCount < 3 {
+		t.Errorf("expected at least 3 sentences in mixed content, got %d", r.SentenceCount)
+	}
+	// English imperatives: "Use the CLI tool", "Create a new file"
+	// Chinese imperatives: "运行测试", "请确保代码质量" (keyword)
+	if r.ImperativeCount < 3 {
+		t.Errorf("expected at least 3 imperative sentences in mixed content, got %d", r.ImperativeCount)
+	}
+}
+
+func TestAnalyzeWithConfig_CustomConfig(t *testing.T) {
+	cfg := &ImperativeConfig{
+		Languages: map[string]LanguageRules{
+			"en": {
+				Verbs: []string{"build", "deploy"},
+			},
+		},
+	}
+
+	content := "Build the project. Deploy to production. Use the tool."
+	r := AnalyzeWithConfig(content, cfg)
+
+	// Only "Build" and "Deploy" should be detected as imperative
+	// "Use" is NOT in this custom config, but falls back to defaultImperativeVerbs
+	if r.ImperativeCount < 2 {
+		t.Errorf("expected at least 2 imperative sentences with custom config, got %d", r.ImperativeCount)
+	}
+}
+
+func TestAnalyzeWithConfig_NilUsesDefault(t *testing.T) {
+	content := "Use the CLI tool. Run the tests."
+	r1 := Analyze(content)
+	r2 := AnalyzeWithConfig(content, nil)
+
+	if r1.ImperativeCount != r2.ImperativeCount {
+		t.Errorf("Analyze and AnalyzeWithConfig(nil) should give same results: %d vs %d",
+			r1.ImperativeCount, r2.ImperativeCount)
+	}
+}
+
+func TestAnalyze_ChineseNonImperative(t *testing.T) {
+	content := "这是一个描述。项目已完成。功能正常工作。"
+	r := Analyze(content)
+
+	if r.ImperativeCount != 0 {
+		t.Errorf("expected 0 imperative sentences for non-imperative Chinese, got %d", r.ImperativeCount)
+	}
+}
+
+// --- Config tests ---
+
+func TestDefaultImperativeConfig(t *testing.T) {
+	cfg := DefaultImperativeConfig()
+	if cfg == nil {
+		t.Fatal("expected non-nil default config")
+	}
+	if len(cfg.Languages) == 0 {
+		t.Error("expected at least one language in default config")
+	}
+	enRules, ok := cfg.Languages["en"]
+	if !ok {
+		t.Fatal("expected 'en' language in default config")
+	}
+	if len(enRules.Verbs) == 0 {
+		t.Error("expected non-empty English verb list")
+	}
+	// Check backward compatibility: all original verbs should be present
+	expectedVerbs := []string{
+		"use", "run", "create", "add", "set", "install",
+		"configure", "write", "read", "check", "verify", "make", "build", "test",
+		"ensure", "include", "remove", "delete", "update", "call", "import",
+		"export", "define", "implement", "return", "pass", "handle", "parse",
+		"generate", "format", "validate", "convert", "follow", "apply", "start",
+		"stop", "avoid", "keep", "do", "execute", "open", "close", "save",
+		"load", "send", "receive",
+	}
+
+	verbSet := make(map[string]bool, len(enRules.Verbs))
+	for _, v := range enRules.Verbs {
+		verbSet[strings.ToLower(v)] = true
+	}
+	for _, v := range expectedVerbs {
+		if !verbSet[v] {
+			t.Errorf("expected verb %q in default English config", v)
+		}
+	}
+
+	zhRules, ok := cfg.Languages["zh"]
+	if !ok {
+		t.Fatal("expected 'zh' language in default config")
+	}
+	if len(zhRules.Verbs) == 0 {
+		t.Error("expected non-empty Chinese verb list")
+	}
+	if len(zhRules.Keywords) == 0 {
+		t.Error("expected non-empty Chinese keyword list")
+	}
+}
+
+func TestHasChinese(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"Hello world", false},
+		{"使用此工具", true},
+		{"Use 使用 both", true},
+		{"12345", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		got := hasChinese(tt.input)
+		if got != tt.want {
+			t.Errorf("hasChinese(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
+// --- Detector unit tests ---
+
+func TestImperativeDetector_ChineseVerbs(t *testing.T) {
+	d := newImperativeDetector(nil)
+
+	tests := []struct {
+		sentence string
+		want     bool
+	}{
+		{"使用CLI工具进行验证", true},
+		{"运行所有测试用例", true},
+		{"创建新的配置文件", true},
+		{"这是一个描述句子", false},
+		{"项目已经完成了", false},
+	}
+
+	for _, tt := range tests {
+		got := d.isImperative(tt.sentence)
+		if got != tt.want {
+			t.Errorf("isImperative(%q) = %v, want %v", tt.sentence, got, tt.want)
+		}
+	}
+}
+
+func TestImperativeDetector_ChineseKeywords(t *testing.T) {
+	d := newImperativeDetector(nil)
+
+	tests := []struct {
+		sentence string
+		want     bool
+	}{
+		{"请确保所有测试通过", true},
+		{"务必按照规范操作", true},
+		{"这只是一个普通句子", false},
+	}
+
+	for _, tt := range tests {
+		got := d.isImperative(tt.sentence)
+		if got != tt.want {
+			t.Errorf("isImperative(%q) = %v, want %v", tt.sentence, got, tt.want)
+		}
+	}
+}
+
+func TestImperativeDetector_EnglishBackwardCompat(t *testing.T) {
+	d := newImperativeDetector(nil)
+
+	tests := []struct {
+		sentence string
+		want     bool
+	}{
+		{"Use the CLI tool", true},
+		{"Run the tests", true},
+		{"This is a description", false},
+		{"Create a new file", true},
+	}
+
+	for _, tt := range tests {
+		got := d.isImperative(tt.sentence)
+		if got != tt.want {
+			t.Errorf("isImperative(%q) = %v, want %v", tt.sentence, got, tt.want)
+		}
+	}
+}
+
+func TestImperativeDetector_MarkdownFormatting(t *testing.T) {
+	d := newImperativeDetector(nil)
+
+	tests := []struct {
+		sentence string
+		want     bool
+	}{
+		{"## Use the tool", true},
+		{"- Run the tests", true},
+		{"**Create** a file", false}, // "**Create" is not cleaned by leadingFormatPat
+		{"  Set the value", true},
+	}
+
+	for _, tt := range tests {
+		got := d.isImperative(tt.sentence)
+		if got != tt.want {
+			t.Errorf("isImperative(%q) = %v, want %v", tt.sentence, got, tt.want)
+		}
+	}
+}
+
+func TestSplitSentences_MixedContent(t *testing.T) {
+	d := newImperativeDetector(nil)
+
+	text := "Use the tool.运行测试。Create a file."
+	sentences := d.splitSentences(text)
+
+	if len(sentences) < 2 {
+		t.Errorf("expected at least 2 sentences from mixed content, got %d: %v", len(sentences), sentences)
+	}
+}
+
+func TestAnalyze_ChineseFullContent(t *testing.T) {
+	content := `# 我的技能
+
+## 使用说明
+
+使用CLI工具验证技能。你必须始终在发布前运行测试。
+
+` + "```bash\nskill-validator validate ./my-skill\n```" + `
+
+## 配置
+
+创建配置文件。设置输出格式。你可以考虑使用JSON。
+
+- 步骤 1：安装
+- 步骤 2：配置
+- 步骤 3：运行
+
+请确保所有检查通过。
+`
+
+	r := Analyze(content)
+
+	if r.WordCount <= 0 {
+		t.Error("expected positive word count")
+	}
+	if r.CodeBlockCount != 1 {
+		t.Errorf("expected 1 code block, got %d", r.CodeBlockCount)
+	}
+	if r.SectionCount != 2 {
+		t.Errorf("expected 2 sections, got %d", r.SectionCount)
+	}
+	// Chinese imperatives: "使用CLI工具验证技能", "创建配置文件", "设置输出格式", "请确保所有检查通过"
+	if r.ImperativeCount < 3 {
+		t.Errorf("expected at least 3 imperative sentences, got %d", r.ImperativeCount)
 	}
 }
