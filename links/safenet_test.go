@@ -10,27 +10,52 @@ func TestIsPrivateIP(t *testing.T) {
 		ip      string
 		private bool
 	}{
-		// IPv4 private/reserved ranges
+		{"0.0.0.0", true},
+		{"0.255.255.255", true},
 		{"127.0.0.1", true},
 		{"127.0.0.2", true},
 		{"10.0.0.1", true},
 		{"10.255.255.255", true},
+		{"100.64.0.1", true},
+		{"100.127.255.255", true},
 		{"172.16.0.1", true},
 		{"172.31.255.255", true},
+		{"192.0.0.5", true},
+		{"192.0.2.10", true},
 		{"192.168.0.1", true},
 		{"192.168.255.255", true},
-		{"169.254.169.254", true}, // cloud metadata
+		{"198.18.0.1", true},
+		{"198.19.255.255", true},
+		{"198.51.100.7", true},
+		{"203.0.113.7", true},
+		{"169.254.169.254", true},
 		{"169.254.0.1", true},
+		{"224.0.0.1", true},
+		{"239.255.255.255", true},
+		{"240.0.0.1", true},
+		{"255.255.255.255", true},
 
-		// IPv6 private/reserved ranges
-		{"::1", true},                       // IPv6 loopback
-		{"fc00::1", true},                   // IPv6 unique local
-		{"fe80::1", true},                   // IPv6 link-local
-		{"8.8.8.8", false},                  // Google DNS
-		{"93.184.216.34", false},            // example.com
-		{"172.32.0.1", false},               // just outside 172.16/12
-		{"192.169.0.1", false},              // just outside 192.168/16
-		{"2607:f8b0:4004:800::200e", false}, // Google public IPv6
+		{"::", true},
+		{"::1", true},
+		{"fc00::1", true},
+		{"fe80::1", true},
+		{"ff02::1", true},
+		{"2001:db8::1", true},
+
+		{"::ffff:127.0.0.1", true},
+		{"::ffff:0.0.0.0", true},
+		{"::ffff:169.254.169.254", true},
+
+		{"8.8.8.8", false},
+		{"93.184.216.34", false},
+		{"100.63.255.255", false},
+		{"100.128.0.1", false},
+		{"172.32.0.1", false},
+		{"192.169.0.1", false},
+		{"198.17.255.255", false},
+		{"198.20.0.1", false},
+		{"2607:f8b0:4004:800::200e", false},
+		{"::ffff:8.8.8.8", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.ip, func(t *testing.T) {

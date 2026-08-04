@@ -6,9 +6,24 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/agent-ecosystem/skill-validator/types"
 	"github.com/tiktoken-go/tokenizer"
+
+	"github.com/agent-ecosystem/skill-validator/types"
+	"github.com/agent-ecosystem/skill-validator/util"
 )
+
+const maxTokenizedFileBytes = 8 * 1024 * 1024
+
+func readFileWithCap(path string) ([]byte, error) {
+	data, err := util.SafeReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxTokenizedFileBytes {
+		data = data[:maxTokenizedFileBytes]
+	}
+	return data, nil
+}
 
 const (
 	// refFileSoftLimit is the per-file token warning threshold for reference files.
@@ -78,8 +93,13 @@ func CheckTokens(dir, body string, opts Options) ([]types.Result, []types.TokenC
 			if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 				continue
 			}
+			if !entry.Type().IsRegular() {
+				relPath := "references/" + entry.Name()
+				results = append(results, ctx.WarnFilef(relPath, "skipping non-regular file: %s", relPath))
+				continue
+			}
 			path := filepath.Join(refsDir, entry.Name())
-			data, err := os.ReadFile(path)
+			data, err := readFileWithCap(path)
 			if err != nil {
 				relPath := "references/" + entry.Name()
 				results = append(results, ctx.WarnFilef(relPath, "could not read %s: %v", relPath, err))
@@ -245,7 +265,7 @@ func countAssetFiles(dir string, enc tokenizer.Codec) []types.TokenCount {
 		if !textAssetExtensions[ext] {
 			return nil
 		}
-		data, err := os.ReadFile(path)
+		data, err := readFileWithCap(path)
 		if err != nil {
 			return nil
 		}
@@ -279,13 +299,16 @@ func countOtherFiles(dir string, enc tokenizer.Codec, opts Options) []types.Toke
 			// Walk files in unknown directory
 			counts = append(counts, countFilesInDir(dir, name, enc)...)
 		} else {
+			if !entry.Type().IsRegular() {
+				continue
+			}
 			if standardRootFiles[strings.ToLower(name)] || opts.AllowFlatLayouts {
 				continue
 			}
 			if binaryExtensions[strings.ToLower(filepath.Ext(name))] {
 				continue
 			}
-			data, err := os.ReadFile(filepath.Join(dir, name))
+			data, err := readFileWithCap(filepath.Join(dir, name))
 			if err != nil {
 				continue
 			}
@@ -317,7 +340,7 @@ func countFilesInDir(rootDir, dirName string, enc tokenizer.Codec) []types.Token
 		if binaryExtensions[strings.ToLower(filepath.Ext(info.Name()))] {
 			return nil
 		}
-		data, err := os.ReadFile(path)
+		data, err := readFileWithCap(path)
 		if err != nil {
 			return nil
 		}
@@ -343,13 +366,16 @@ func countRootFiles(dir string, enc tokenizer.Codec) []types.TokenCount {
 		if entry.IsDir() || strings.HasPrefix(name, ".") {
 			continue
 		}
+		if !entry.Type().IsRegular() {
+			continue
+		}
 		if standardRootFiles[strings.ToLower(name)] {
 			continue
 		}
 		if binaryExtensions[strings.ToLower(filepath.Ext(name))] {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(dir, name))
+		data, err := readFileWithCap(filepath.Join(dir, name))
 		if err != nil {
 			continue
 		}

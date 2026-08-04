@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -182,6 +183,58 @@ func testHTTPClient() *http.Client {
 		}
 		return nil
 	}}
+}
+
+func TestCheckLinks_ConcurrencyAndTruncation(t *testing.T) {
+	orig := newHTTPClient
+	newHTTPClient = func() *http.Client { return testHTTPClient() }
+	t.Cleanup(func() { newHTTPClient = orig })
+
+	var (
+		inFlight    int32
+		maxInFlight int32
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cur := atomic.AddInt32(&inFlight, 1)
+		defer atomic.AddInt32(&inFlight, -1)
+		for {
+			prev := atomic.LoadInt32(&maxInFlight)
+			if cur <= prev || atomic.CompareAndSwapInt32(&maxInFlight, prev, cur) {
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	var body strings.Builder
+	totalLinks := maxLinksPerSkill + 10
+	for i := range totalLinks {
+		fmt.Fprintf(&body, "[l%d](%s/x?i=%d)\n", i, server.URL, i)
+	}
+
+	results := CheckLinks(t.Context(), t.TempDir(), body.String())
+
+	var passes int
+	var sawTruncationWarning bool
+	for _, r := range results {
+		if r.Level == types.Pass {
+			passes++
+		}
+		if r.Level == types.Warning && strings.Contains(r.Message, "truncated") {
+			sawTruncationWarning = true
+		}
+	}
+	if passes != maxLinksPerSkill {
+		t.Errorf("expected %d passes, got %d (total results=%d)", maxLinksPerSkill, passes, len(results))
+	}
+	if !sawTruncationWarning {
+		t.Errorf("expected truncation warning, got results=%+v", results)
+	}
+	if int(maxInFlight) > maxConcurrentLinkChecks {
+		t.Errorf("observed %d concurrent requests, want <= %d", maxInFlight, maxConcurrentLinkChecks)
+	}
 }
 
 func TestCheckHTTPLink(t *testing.T) {

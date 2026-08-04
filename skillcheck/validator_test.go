@@ -3,6 +3,8 @@ package skillcheck
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/agent-ecosystem/skill-validator/skill"
@@ -80,6 +82,40 @@ func TestReadReferencesMarkdownFiles(t *testing.T) {
 	}
 	if files["notes.md"] != "# Notes" {
 		t.Errorf("notes.md content = %q", files["notes.md"])
+	}
+}
+
+func TestReadReferencesMarkdownFiles_SkipsSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks require admin on Windows")
+	}
+	dir := t.TempDir()
+	refsDir := filepath.Join(dir, "references")
+	if err := os.MkdirAll(refsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(refsDir, "real.md"), []byte("# Real"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(dir, "out-of-tree-secret.md")
+	if err := os.WriteFile(secret, []byte("SHOULD-NOT-LEAK"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(refsDir, "leaky.md")); err != nil {
+		t.Fatal(err)
+	}
+
+	files := ReadReferencesMarkdownFiles(dir)
+	if _, ok := files["leaky.md"]; ok {
+		t.Fatalf("expected symlinked reference to be skipped, got %q", files["leaky.md"])
+	}
+	if got := files["real.md"]; got != "# Real" {
+		t.Errorf("real.md content = %q, want %q", got, "# Real")
+	}
+	for name, content := range files {
+		if strings.Contains(content, "SHOULD-NOT-LEAK") {
+			t.Errorf("symlink target leaked via %s", name)
+		}
 	}
 }
 

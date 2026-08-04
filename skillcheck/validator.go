@@ -57,7 +57,7 @@ func DetectSkills(dir string) (types.SkillMode, []string) {
 // frontmatter. This is used as a fallback for content/contamination analysis when
 // frontmatter parsing fails.
 func ReadSkillRaw(dir string) string {
-	data, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
+	data, err := util.SafeReadFile(filepath.Join(dir, "SKILL.md"))
 	if err != nil {
 		return ""
 	}
@@ -82,7 +82,7 @@ func ReadReferencesMarkdownFiles(dir string) map[string]string {
 		if !strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(refsDir, entry.Name()))
+		data, err := util.SafeReadFile(filepath.Join(refsDir, entry.Name()))
 		if err != nil {
 			continue
 		}

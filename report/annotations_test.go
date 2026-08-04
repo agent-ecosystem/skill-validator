@@ -96,6 +96,46 @@ func TestPrintAnnotations_NoFile(t *testing.T) {
 	}
 }
 
+func TestPrintAnnotations_EscapesInjection(t *testing.T) {
+	r := &types.Report{
+		SkillDir: "/workspace/skills/my-skill",
+		Results: []types.Result{
+			{
+				Level:    types.Error,
+				Category: "Front,matter:bad",
+				Message:  "evil\n::error file=/etc/passwd::PWNED\nmore 100% safe?",
+				File:     "name\nwith newline.md",
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	PrintAnnotations(&buf, r, "/workspace")
+
+	out := buf.String()
+	if got := strings.Count(out, "\n"); got != 1 {
+		t.Fatalf("expected exactly one newline (trailing), got %d in %q", got, out)
+	}
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected one annotation line, got %d: %q", len(lines), out)
+	}
+	for _, l := range lines[1:] {
+		if strings.HasPrefix(l, "::") {
+			t.Errorf("injected annotation line emitted: %q", l)
+		}
+	}
+	if !strings.Contains(out, "%0A") {
+		t.Errorf("newline should be encoded as %%0A, got %q", out)
+	}
+	if !strings.Contains(out, "%25") {
+		t.Errorf("percent should be encoded as %%25, got %q", out)
+	}
+	if !strings.Contains(out, "Front%2Cmatter%3Abad") {
+		t.Errorf("property fields should encode , and :, got %q", out)
+	}
+}
+
 func TestPrintMultiAnnotations(t *testing.T) {
 	mr := &types.MultiReport{
 		Skills: []*types.Report{

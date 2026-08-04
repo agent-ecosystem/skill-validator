@@ -357,7 +357,7 @@ func (c *claudeCLIClient) buildArgs(systemPrompt, userContent string) []string {
 	if systemPrompt != "" {
 		args = append(args, "--system-prompt", systemPrompt)
 	}
-	args = append(args, userContent)
+	args = append(args, "--", userContent)
 	return args
 }
 

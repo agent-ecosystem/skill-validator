@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/agent-ecosystem/skill-validator/types"
+	"github.com/agent-ecosystem/skill-validator/util"
 )
 
 // orderedRecognizedDirs lists the recognized subdirectories in a stable order
@@ -85,7 +86,7 @@ func CheckOrphanFiles(dir, body string, opts Options) []types.Result {
 			}
 			if strings.Contains(lowerText, strings.ToLower(rf)) {
 				scannedRootFiles[rf] = true
-				data, err := os.ReadFile(filepath.Join(dir, rf))
+				data, err := util.SafeReadFile(filepath.Join(dir, rf))
 				if err == nil {
 					queue = append(queue, queueItem{text: string(data), source: rf})
 				}
@@ -99,14 +100,14 @@ func CheckOrphanFiles(dir, body string, opts Options) []types.Result {
 				continue
 			}
 			if containsReference(item.text, sourceDir, relPath) {
-				markReached(relPath, item.source, dir, &queue, reached, reachedFrom, inventory)
+				markReached(relPath, item.source, dir, &queue, reached, reachedFrom)
 			} else if isPython && pythonImportReaches(item.text, item.source, relPath) {
 				// Python import resolution takes priority over the extensionless
 				// fallback so that normal import statements (e.g., "from helpers
 				// import merge") don't trigger a "missing extension" warning.
-				markReached(relPath, item.source, dir, &queue, reached, reachedFrom, inventory)
+				markReached(relPath, item.source, dir, &queue, reached, reachedFrom)
 			} else if containsReferenceWithoutExtension(item.text, sourceDir, relPath) {
-				markReached(relPath, item.source, dir, &queue, reached, reachedFrom, inventory)
+				markReached(relPath, item.source, dir, &queue, reached, reachedFrom)
 				missingExtension[relPath] = true
 			}
 		}
@@ -122,7 +123,7 @@ func CheckOrphanFiles(dir, body string, opts Options) []types.Result {
 					continue
 				}
 				scannedInitFiles[initPath] = true
-				data, err := os.ReadFile(filepath.Join(dir, initPath))
+				data, err := util.SafeReadFile(filepath.Join(dir, initPath))
 				if err == nil {
 					queue = append(queue, queueItem{text: string(data), source: initPath})
 				}
@@ -173,6 +174,9 @@ func rootTextFiles(dir string) []string {
 		if entry.IsDir() {
 			continue
 		}
+		if !entry.Type().IsRegular() {
+			continue
+		}
 		name := entry.Name()
 		if strings.EqualFold(name, "SKILL.md") {
 			continue
@@ -194,6 +198,9 @@ func inventoryFiles(dir string) []string {
 				return nil // skip inaccessible paths
 			}
 			if entry.IsDir() {
+				return nil
+			}
+			if !entry.Type().IsRegular() {
 				return nil
 			}
 			// Skip __init__.py files — these are Python package markers that
@@ -263,12 +270,12 @@ func containsReferenceWithoutExtension(text, sourceDir, relPath string) bool {
 
 // markReached marks a file as reached, reads it if it's a text file, and
 // enqueues its content for further BFS scanning.
-func markReached(relPath, source, dir string, queue *[]queueItem, reached map[string]bool, reachedFrom map[string]string, inventory []string) {
+func markReached(relPath, source, dir string, queue *[]queueItem, reached map[string]bool, reachedFrom map[string]string) {
 	reached[relPath] = true
 	reachedFrom[relPath] = source
 
 	if isTextFile(relPath) {
-		data, err := os.ReadFile(filepath.Join(dir, relPath))
+		data, err := util.SafeReadFile(filepath.Join(dir, relPath))
 		if err == nil {
 			*queue = append(*queue, queueItem{text: string(data), source: relPath})
 		}
@@ -378,6 +385,9 @@ func CheckFlatOrphanFiles(dir, body string) []types.Result {
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || strings.HasPrefix(name, ".") {
+			continue
+		}
+		if !entry.Type().IsRegular() {
 			continue
 		}
 		if strings.EqualFold(name, "SKILL.md") {

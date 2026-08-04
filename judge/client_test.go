@@ -82,7 +82,7 @@ func TestClaudeCLIBuildArgs(t *testing.T) {
 
 	t.Run("with system prompt", func(t *testing.T) {
 		args := c.buildArgs("you are a judge", "score this")
-		want := []string{"-p", "--output-format", "text", "--model", "sonnet", "--system-prompt", "you are a judge", "score this"}
+		want := []string{"-p", "--output-format", "text", "--model", "sonnet", "--system-prompt", "you are a judge", "--", "score this"}
 		if len(args) != len(want) {
 			t.Fatalf("got %d args, want %d: %v", len(args), len(want), args)
 		}
@@ -100,9 +100,27 @@ func TestClaudeCLIBuildArgs(t *testing.T) {
 				t.Error("--system-prompt should not be present when system prompt is empty")
 			}
 		}
-		// Last arg should be the user content
 		if args[len(args)-1] != "score this" {
 			t.Errorf("last arg = %q, want %q", args[len(args)-1], "score this")
+		}
+		if args[len(args)-2] != "--" {
+			t.Errorf("expected '--' before user content, got %q", args[len(args)-2])
+		}
+	})
+
+	t.Run("flag-like user content cannot be parsed as option", func(t *testing.T) {
+		args := c.buildArgs("", "--dangerous-flag=value")
+		var sawSeparator bool
+		for i, a := range args {
+			if a == "--" {
+				sawSeparator = true
+				if i != len(args)-2 {
+					t.Errorf("'--' should precede the user content; got args=%v", args)
+				}
+			}
+		}
+		if !sawSeparator {
+			t.Errorf("expected '--' separator in args=%v", args)
 		}
 	})
 }

@@ -4,11 +4,31 @@
 package util
 
 import (
+	"errors"
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"sort"
 )
+
+var ErrUnsafeFile = errors.New("refusing to read non-regular file")
+
+func SafeReadFile(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%w: %s", ErrUnsafeFile, path)
+	}
+	return os.ReadFile(path)
+}
+
+func IsRegularFile(path string) bool {
+	info, err := os.Lstat(path)
+	return err == nil && info.Mode().IsRegular()
+}
 
 // --- Color constants for terminal output ---
 

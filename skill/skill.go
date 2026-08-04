@@ -5,11 +5,12 @@ package skill
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/agent-ecosystem/skill-validator/util"
 )
 
 var _ yaml.Unmarshaler = (*AllowedTools)(nil)
@@ -81,7 +82,7 @@ var knownFrontmatterFields = map[string]bool{
 // Load reads and parses a SKILL.md file from the given directory.
 func Load(dir string) (*Skill, error) {
 	path := filepath.Join(dir, "SKILL.md")
-	data, err := os.ReadFile(path)
+	data, err := util.SafeReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading SKILL.md: %w", err)
 	}

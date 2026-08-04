@@ -1,9 +1,13 @@
 package skill
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
+
+	"github.com/agent-ecosystem/skill-validator/util"
 )
 
 func TestSplitFrontmatter(t *testing.T) {
@@ -119,6 +123,24 @@ func TestLoad(t *testing.T) {
 		_, err := Load(dir)
 		if err == nil {
 			t.Fatal("expected error for missing SKILL.md")
+		}
+	})
+
+	t.Run("refuses SKILL.md symlink", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("symlinks require admin on Windows")
+		}
+		dir := t.TempDir()
+		secret := filepath.Join(dir, "secret.md")
+		if err := os.WriteFile(secret, []byte("---\nname: x\ndescription: x\n---\nLEAK"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(secret, filepath.Join(dir, "SKILL.md")); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Load(dir)
+		if !errors.Is(err, util.ErrUnsafeFile) {
+			t.Fatalf("expected ErrUnsafeFile, got %v", err)
 		}
 	})
 
