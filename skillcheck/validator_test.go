@@ -85,6 +85,31 @@ func TestReadReferencesMarkdownFiles(t *testing.T) {
 	}
 }
 
+// Issue #88: when references/ itself is a symlink to a directory outside the
+// skill tree, the regular files inside pass a leaf-only check. Their content
+// must not be read and shipped to the LLM judge.
+func TestReadReferencesMarkdownFiles_SkipsSymlinkedDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks require admin on Windows")
+	}
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "leak.md"), []byte("SHOULD-NOT-LEAK"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(dir, "references")); err != nil {
+		t.Fatal(err)
+	}
+
+	files := ReadReferencesMarkdownFiles(dir)
+	for name, content := range files {
+		if strings.Contains(content, "SHOULD-NOT-LEAK") {
+			t.Errorf("out-of-tree content leaked via %s", name)
+		}
+	}
+}
+
 func TestReadReferencesMarkdownFiles_SkipsSymlinks(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks require admin on Windows")

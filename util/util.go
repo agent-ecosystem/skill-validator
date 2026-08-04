@@ -10,19 +10,50 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
-var ErrUnsafeFile = errors.New("refusing to read non-regular file")
+var ErrUnsafeFile = errors.New("refusing to read unsafe file")
 
-func SafeReadFile(path string) ([]byte, error) {
+// SafeReadFile reads a file from an untrusted skill package rooted at root.
+// It refuses non-regular files (symlinks, devices, pipes) and paths that
+// resolve outside root after following symlinks in any parent directory, so
+// a symlinked file or a symlinked directory inside the package cannot leak
+// content from elsewhere on the machine.
+func SafeReadFile(root, path string) ([]byte, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
 	}
 	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("%w: %s", ErrUnsafeFile, path)
+		return nil, fmt.Errorf("%w: %s is not a regular file", ErrUnsafeFile, path)
+	}
+	inside, err := ResolvesWithin(root, path)
+	if err != nil {
+		return nil, err
+	}
+	if !inside {
+		return nil, fmt.Errorf("%w: %s resolves outside the skill directory", ErrUnsafeFile, path)
 	}
 	return os.ReadFile(path)
+}
+
+// ResolvesWithin reports whether path, after resolving all symlinks in both
+// arguments, remains inside root. The path must exist.
+func ResolvesWithin(root, path string) (bool, error) {
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return false, err
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return false, err
+	}
+	rel, err := filepath.Rel(resolvedRoot, resolved)
+	if err != nil {
+		return false, err
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)), nil
 }
 
 func IsRegularFile(path string) bool {

@@ -82,7 +82,7 @@ var knownFrontmatterFields = map[string]bool{
 // Load reads and parses a SKILL.md file from the given directory.
 func Load(dir string) (*Skill, error) {
 	path := filepath.Join(dir, "SKILL.md")
-	data, err := util.SafeReadFile(path)
+	data, err := util.SafeReadFile(dir, path)
 	if err != nil {
 		return nil, fmt.Errorf("reading SKILL.md: %w", err)
 	}

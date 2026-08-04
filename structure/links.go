@@ -7,6 +7,7 @@ import (
 
 	"github.com/agent-ecosystem/skill-validator/links"
 	"github.com/agent-ecosystem/skill-validator/types"
+	"github.com/agent-ecosystem/skill-validator/util"
 )
 
 // CheckInternalLinks validates relative (internal) links in the skill body.
@@ -48,9 +49,16 @@ func CheckInternalLinks(dir, body string) []types.Result {
 		}
 		if _, err := os.Stat(resolved); os.IsNotExist(err) {
 			results = append(results, ctx.Errorf("broken internal link: %s (file not found)", link))
-		} else {
-			results = append(results, ctx.Passf("internal link: %s (exists)", link))
+			continue
 		}
+		// The syntactic check above cannot see symlinks: a path that looks
+		// internal may still resolve outside the skill directory.
+		inside, err := util.ResolvesWithin(dir, resolved)
+		if err != nil || !inside {
+			results = append(results, ctx.Errorf("internal link escapes skill directory: %s (resolves outside the skill package)", link))
+			continue
+		}
+		results = append(results, ctx.Passf("internal link: %s (exists)", link))
 	}
 
 	return results

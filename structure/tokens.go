@@ -14,8 +14,8 @@ import (
 
 const maxTokenizedFileBytes = 8 * 1024 * 1024
 
-func readFileWithCap(path string) ([]byte, error) {
-	data, err := util.SafeReadFile(path)
+func readFileWithCap(root, path string) ([]byte, error) {
+	data, err := util.SafeReadFile(root, path)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func CheckTokens(dir, body string, opts Options) ([]types.Result, []types.TokenC
 				continue
 			}
 			path := filepath.Join(refsDir, entry.Name())
-			data, err := readFileWithCap(path)
+			data, err := readFileWithCap(dir, path)
 			if err != nil {
 				relPath := "references/" + entry.Name()
 				results = append(results, ctx.WarnFilef(relPath, "could not read %s: %v", relPath, err))
@@ -270,7 +270,7 @@ func countAssetFiles(dir string, enc tokenizer.Codec) []types.TokenCount {
 		if !textAssetExtensions[ext] {
 			return nil
 		}
-		data, err := readFileWithCap(path)
+		data, err := readFileWithCap(dir, path)
 		if err != nil {
 			return nil
 		}
@@ -353,7 +353,7 @@ func countOtherFiles(dir string, enc tokenizer.Codec, opts Options, exclusions *
 			if binaryExtensions[strings.ToLower(filepath.Ext(name))] {
 				continue
 			}
-			data, err := readFileWithCap(filepath.Join(dir, name))
+			data, err := readFileWithCap(dir, filepath.Join(dir, name))
 			if err != nil {
 				continue
 			}
@@ -398,7 +398,7 @@ func countFilesInDir(rootDir, dirName string, enc tokenizer.Codec, exclusions *t
 		if binaryExtensions[strings.ToLower(filepath.Ext(info.Name()))] {
 			return nil
 		}
-		data, err := readFileWithCap(path)
+		data, err := readFileWithCap(rootDir, path)
 		if err != nil {
 			return nil
 		}
@@ -432,7 +432,7 @@ func countRootFiles(dir string, enc tokenizer.Codec) []types.TokenCount {
 		if binaryExtensions[strings.ToLower(filepath.Ext(name))] {
 			continue
 		}
-		data, err := readFileWithCap(filepath.Join(dir, name))
+		data, err := readFileWithCap(dir, filepath.Join(dir, name))
 		if err != nil {
 			continue
 		}

@@ -86,7 +86,7 @@ func CheckOrphanFiles(dir, body string, opts Options) []types.Result {
 			}
 			if strings.Contains(lowerText, strings.ToLower(rf)) {
 				scannedRootFiles[rf] = true
-				data, err := util.SafeReadFile(filepath.Join(dir, rf))
+				data, err := util.SafeReadFile(dir, filepath.Join(dir, rf))
 				if err == nil {
 					queue = append(queue, queueItem{text: string(data), source: rf})
 				}
@@ -123,7 +123,7 @@ func CheckOrphanFiles(dir, body string, opts Options) []types.Result {
 					continue
 				}
 				scannedInitFiles[initPath] = true
-				data, err := util.SafeReadFile(filepath.Join(dir, initPath))
+				data, err := util.SafeReadFile(dir, filepath.Join(dir, initPath))
 				if err == nil {
 					queue = append(queue, queueItem{text: string(data), source: initPath})
 				}
@@ -308,7 +308,7 @@ func markReached(relPath, source, dir string, queue *[]queueItem, reached map[st
 	reachedFrom[relPath] = source
 
 	if isTextFile(relPath) {
-		data, err := util.SafeReadFile(filepath.Join(dir, relPath))
+		data, err := util.SafeReadFile(dir, filepath.Join(dir, relPath))
 		if err == nil {
 			*queue = append(*queue, queueItem{text: string(data), source: relPath})
 		}
