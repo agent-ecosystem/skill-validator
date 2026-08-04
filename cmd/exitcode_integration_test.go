@@ -172,6 +172,20 @@ func TestSliceFlags(t *testing.T) {
 			wantStdout: "unknown directory: testing/",
 			noStdout:   "unknown directory: evals/",
 		},
+		{
+			name:       "check allow-nested-paths suppresses exact path only",
+			args:       []string{"check", "--only=structure", "--skip-orphans", "--allow-nested-paths=assets/components", fixture(t, "nested-paths-skill")},
+			wantCode:   2,
+			wantStdout: "deep nesting detected: assets/components-extra/",
+			noStdout:   "deep nesting detected: assets/components/",
+		},
+		{
+			name:       "validate structure allow-nested-paths accepts Windows separators",
+			args:       []string{"validate", "structure", "--skip-orphans", `--allow-nested-paths=assets\components,assets\components-extra`, fixture(t, "nested-paths-skill")},
+			wantCode:   0,
+			wantStdout: "deep nesting allowed: assets/components/",
+			noStdout:   "deep nesting detected:",
+		},
 	}
 
 	for _, tt := range tests {
@@ -191,6 +205,52 @@ func TestSliceFlags(t *testing.T) {
 				if strings.Contains(string(out), tt.noStdout) {
 					t.Errorf("expected output NOT to contain %q, got:\n%s", tt.noStdout, out)
 				}
+			}
+		})
+	}
+}
+
+func TestAllowNestedPathsInvalidPath(t *testing.T) {
+	bin := buildBinary(t)
+
+	for _, args := range [][]string{
+		{"validate", "structure", "--allow-nested-paths=/assets/components", fixture(t, "valid-skill")},
+		{"check", "--allow-nested-paths=../components", fixture(t, "valid-skill")},
+	} {
+		cmd := exec.Command(bin, args...)
+		out, _ := cmd.CombinedOutput()
+		if got := cmd.ProcessState.ExitCode(); got != 3 {
+			t.Errorf("exit code = %d, want 3 (args: %v)\noutput: %s", got, args, out)
+		}
+		if !strings.Contains(string(out), "invalid --allow-nested-paths") {
+			t.Errorf("expected invalid path error, got:\n%s", out)
+		}
+	}
+}
+
+func TestAllowNestedPathsOutputFormats(t *testing.T) {
+	bin := buildBinary(t)
+
+	for _, format := range []string{"text", "json", "markdown"} {
+		t.Run(format, func(t *testing.T) {
+			args := []string{
+				"validate", "structure",
+				"--skip-orphans",
+				"--allow-nested-paths=assets/components,assets/components-extra",
+				"--output=" + format,
+				fixture(t, "nested-paths-skill"),
+			}
+			cmd := exec.Command(bin, args...)
+			out, _ := cmd.CombinedOutput()
+
+			if got := cmd.ProcessState.ExitCode(); got != 0 {
+				t.Errorf("exit code = %d, want 0\noutput: %s", got, out)
+			}
+			if !strings.Contains(string(out), "deep nesting allowed: assets/components/") {
+				t.Errorf("expected allowed-path info in %s output, got:\n%s", format, out)
+			}
+			if strings.Contains(string(out), "deep nesting detected:") {
+				t.Errorf("unexpected deep-nesting warning in %s output:\n%s", format, out)
 			}
 		})
 	}

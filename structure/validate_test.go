@@ -168,6 +168,29 @@ func TestValidate(t *testing.T) {
 		requireResultContaining(t, report.Results, types.Error, "parsing frontmatter YAML")
 	})
 
+	t.Run("allow-nested-paths changes only nesting results", func(t *testing.T) {
+		dir := t.TempDir()
+		writeSkill(t, dir, "---\nname: "+dirName(dir)+"\ndescription: desc\n---\n# Body\n")
+		writeFile(t, dir, "assets/components/button/include.md", "unreferenced asset")
+
+		report := Validate(dir, Options{AllowNestedPaths: []string{"assets/components"}})
+
+		requireNoResultContaining(t, report.Results, types.Warning, "deep nesting detected: assets/components/")
+		requireResultContaining(t, report.Results, types.Info, "deep nesting allowed: assets/components/")
+		requireResultContaining(t, report.Results, types.Warning, "potentially unreferenced file: assets/components/button/include.md")
+
+		hasAssetTokenCount := false
+		for _, count := range report.TokenCounts {
+			if count.File == "assets/components/button/include.md" {
+				hasAssetTokenCount = true
+				break
+			}
+		}
+		if !hasAssetTokenCount {
+			t.Error("expected allowed nested path to remain in token accounting")
+		}
+	})
+
 	t.Run("allow-dirs suppresses unknown dir warning in full validation", func(t *testing.T) {
 		dir := t.TempDir()
 		writeSkill(t, dir, "---\nname: "+dirName(dir)+"\ndescription: A valid skill\n---\n# Body\n")

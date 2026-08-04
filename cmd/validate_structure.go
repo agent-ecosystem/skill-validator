@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/agent-ecosystem/skill-validator/structure"
@@ -13,6 +15,7 @@ var (
 	structAllowExtraFrontmatter bool
 	structAllowFlatLayouts      bool
 	structAllowDirs             []string
+	structAllowNestedPaths      []string
 )
 
 var validateStructureCmd = &cobra.Command{
@@ -33,10 +36,17 @@ func init() {
 		"allow files at the skill root without warnings and treat them as standard content for token counting")
 	validateStructureCmd.Flags().StringSliceVar(&structAllowDirs, "allow-dirs", nil,
 		"comma-separated list of directory names to accept without warnings (e.g. --allow-dirs=evals,testing)")
+	validateStructureCmd.Flags().StringSliceVar(&structAllowNestedPaths, "allow-nested-paths", nil,
+		"comma-separated skill-relative paths where deep nesting is allowed (e.g. --allow-nested-paths=assets/components)")
 	validateCmd.AddCommand(validateStructureCmd)
 }
 
 func runValidateStructure(cmd *cobra.Command, args []string) error {
+	allowNestedPaths, err := structure.NormalizeRelativePaths(structAllowNestedPaths)
+	if err != nil {
+		return fmt.Errorf("invalid --allow-nested-paths: %w", err)
+	}
+
 	_, mode, dirs, err := detectAndResolve(args)
 	if err != nil {
 		return err
@@ -47,6 +57,7 @@ func runValidateStructure(cmd *cobra.Command, args []string) error {
 		AllowExtraFrontmatter: structAllowExtraFrontmatter,
 		AllowFlatLayouts:      structAllowFlatLayouts,
 		AllowDirs:             structAllowDirs,
+		AllowNestedPaths:      allowNestedPaths,
 	}
 	eopts := exitOpts{strict: strictStructure}
 

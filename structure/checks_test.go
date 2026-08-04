@@ -165,6 +165,30 @@ func TestCheckStructure(t *testing.T) {
 		requireResult(t, results, types.Warning, "deep nesting detected: references/subdir/")
 	})
 
+	t.Run("allow-nested-paths suppresses only the selected subtree", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "SKILL.md", "content")
+		writeFile(t, dir, "assets/components/button/include.md", "button")
+		writeFile(t, dir, "assets/components-extra/card/include.md", "card")
+
+		results := CheckStructure(dir, Options{AllowNestedPaths: []string{"assets/components"}})
+
+		requireNoResultContaining(t, results, types.Warning, "deep nesting detected: assets/components/")
+		requireResult(t, results, types.Warning, "deep nesting detected: assets/components-extra/")
+		requireResultContaining(t, results, types.Info, "deep nesting allowed: assets/components/")
+	})
+
+	t.Run("allow-nested-paths accepts normalized Windows separators", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "SKILL.md", "content")
+		writeFile(t, dir, "assets/components/button/include.md", "button")
+
+		results := CheckStructure(dir, Options{AllowNestedPaths: []string{`assets\components`}})
+
+		requireNoResultContaining(t, results, types.Warning, "deep nesting detected: assets/components/")
+		requireResultContaining(t, results, types.Info, "deep nesting allowed: assets/components/")
+	})
+
 	t.Run("hidden files and dirs are skipped", func(t *testing.T) {
 		dir := t.TempDir()
 		writeFile(t, dir, "SKILL.md", "content")
