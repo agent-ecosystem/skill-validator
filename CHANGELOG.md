@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0]
+
+### Added
+
+- `--allow-nested-paths` flag for `validate structure` and `check`: allow
+  deep nesting within selected skill-relative paths ([#82], thanks
+  [@choplin])
+- `--exclude-token-paths` flag: exclude selected subtrees from non-standard
+  token accounting ([#83], thanks [@choplin])
+- `-o compact` output format: one line per skill listing only warnings and
+  errors ([#84], thanks [@choplin])
+- Multilingual imperative-sentence detection in content analysis, with
+  Chinese verb/keyword support and mixed CJK/Latin sentence splitting
+  ([#79], thanks [@pinghe])
+
+### Fixed
+
+- False-positive "referenced without its extension" warnings: reference
+  matching now requires path-word boundaries, and a same-directory sibling
+  no longer matches bare words in prose ([#85], [#89])
+
+### Security
+
+- Hardening against malicious skill packages ([#78], thanks
+  [@aminmesbahi]): expanded SSRF blocklist for link checking (CGNAT,
+  multicast, IPv4-mapped IPv6, and more), refusal to read symlinks and
+  other non-regular files, prompt-injection delimiters and score clamping
+  for the LLM judge, `--` separator for claude CLI invocations, tightened
+  score-cache permissions, bounded link-check concurrency, and escaped
+  GitHub Actions annotations (also closes [#81])
+- Symlink containment enforced for file reads and internal-link
+  validation: paths and link targets must resolve inside the skill
+  package ([#86], [#88], [#90])
+
 ## [1.5.6]
 
 ### Fixed
@@ -211,6 +245,7 @@ First stable release. Includes the complete CLI and importable library packages.
 - `types` — shared data types (`Report`, `Result`, `Level`, etc.)
 - `judge.LLMClient` interface for custom LLM providers
 
+[1.6.0]: https://github.com/agent-ecosystem/skill-validator/compare/v1.5.6...v1.6.0
 [1.5.6]: https://github.com/agent-ecosystem/skill-validator/compare/v1.5.5...v1.5.6
 [1.5.5]: https://github.com/agent-ecosystem/skill-validator/compare/v1.5.4...v1.5.5
 [1.5.4]: https://github.com/agent-ecosystem/skill-validator/compare/v1.5.3...v1.5.4
@@ -240,3 +275,17 @@ First stable release. Includes the complete CLI and importable library packages.
 [#63]: https://github.com/agent-ecosystem/skill-validator/issues/63
 [#70]: https://github.com/agent-ecosystem/skill-validator/issues/70
 [#71]: https://github.com/agent-ecosystem/skill-validator/issues/71
+[#78]: https://github.com/agent-ecosystem/skill-validator/pull/78
+[#79]: https://github.com/agent-ecosystem/skill-validator/pull/79
+[#81]: https://github.com/agent-ecosystem/skill-validator/issues/81
+[#82]: https://github.com/agent-ecosystem/skill-validator/pull/82
+[#83]: https://github.com/agent-ecosystem/skill-validator/pull/83
+[#84]: https://github.com/agent-ecosystem/skill-validator/pull/84
+[#85]: https://github.com/agent-ecosystem/skill-validator/issues/85
+[#86]: https://github.com/agent-ecosystem/skill-validator/issues/86
+[#88]: https://github.com/agent-ecosystem/skill-validator/issues/88
+[#89]: https://github.com/agent-ecosystem/skill-validator/pull/89
+[#90]: https://github.com/agent-ecosystem/skill-validator/pull/90
+[@aminmesbahi]: https://github.com/aminmesbahi
+[@choplin]: https://github.com/choplin
+[@pinghe]: https://github.com/pinghe
