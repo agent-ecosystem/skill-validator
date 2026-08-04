@@ -238,16 +238,38 @@ func filesInDir(inventory []string, dir string) []string {
 // references/guide.md might reference images/diagram.png, which should match the
 // inventory entry references/images/diagram.png.
 func containsReference(text, sourceDir, relPath string) bool {
-	// Direct match: the full root-relative path appears in the text.
-	if strings.Contains(text, relPath) {
+	return matchesReference(text, sourceDir, relPath, false)
+}
+
+// containsReferenceWithoutExtension is like containsReference but strips the
+// file extension before matching. This catches cases where skill authors
+// reference scripts without the extension (e.g., "scripts/check_fillable_fields"
+// instead of "scripts/check_fillable_fields.py"). The sourceDir-relative
+// fallback is skipped when it would reduce to a bare filename: without an
+// extension or a directory separator, that form is indistinguishable from an
+// ordinary word in prose (a same-directory sibling of lint.yml would
+// otherwise match every "lint" in the text — see issue #85).
+func containsReferenceWithoutExtension(text, sourceDir, relPath string) bool {
+	ext := filepath.Ext(relPath)
+	if ext == "" {
+		return false
+	}
+	return matchesReference(text, sourceDir, strings.TrimSuffix(relPath, ext), true)
+}
+
+// matchesReference reports whether text mentions relPath by its root-relative
+// form or by its form relative to sourceDir. When relRequiresDir is set, the
+// sourceDir-relative fallback only applies if that form still contains a
+// directory separator.
+func matchesReference(text, sourceDir, relPath string, relRequiresDir bool) bool {
+	if containsPathToken(text, relPath) {
 		return true
 	}
-	// Relative match: if the source is in a subdirectory, check whether the
-	// path relative to that directory appears in the text.
 	if sourceDir != "" {
 		rel, err := filepath.Rel(sourceDir, relPath)
 		if err == nil && !strings.HasPrefix(rel, "..") {
-			if strings.Contains(text, filepath.ToSlash(rel)) {
+			relSlash := filepath.ToSlash(rel)
+			if (!relRequiresDir || strings.Contains(relSlash, "/")) && containsPathToken(text, relSlash) {
 				return true
 			}
 		}
@@ -255,17 +277,28 @@ func containsReference(text, sourceDir, relPath string) bool {
 	return false
 }
 
-// containsReferenceWithoutExtension is like containsReference but strips the
-// file extension before matching. This catches cases where skill authors
-// reference scripts without the extension (e.g., "scripts/check_fillable_fields"
-// instead of "scripts/check_fillable_fields.py").
-func containsReferenceWithoutExtension(text, sourceDir, relPath string) bool {
-	ext := filepath.Ext(relPath)
-	if ext == "" {
-		return false
+// containsPathToken reports whether token occurs in text with path-word
+// boundaries on both sides, so references/lint does not match inside
+// references/linting and lint.yml does not match inside eslint.yml.
+func containsPathToken(text, token string) bool {
+	for start := 0; ; start++ {
+		i := strings.Index(text[start:], token)
+		if i < 0 {
+			return false
+		}
+		start += i
+		end := start + len(token)
+		beforeOK := start == 0 || !isPathWordByte(text[start-1])
+		afterOK := end == len(text) || !isPathWordByte(text[end])
+		if beforeOK && afterOK {
+			return true
+		}
 	}
-	noExt := strings.TrimSuffix(relPath, ext)
-	return containsReference(text, sourceDir, noExt)
+}
+
+func isPathWordByte(b byte) bool {
+	return b == '_' || b == '-' ||
+		('a' <= b && b <= 'z') || ('A' <= b && b <= 'Z') || ('0' <= b && b <= '9')
 }
 
 // markReached marks a file as reached, reads it if it's a text file, and
