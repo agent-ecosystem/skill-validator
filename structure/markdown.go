@@ -39,7 +39,7 @@ func CheckMarkdown(dir, body string) []types.Result {
 		if !strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
 			continue
 		}
-		data, err := util.SafeReadFile(filepath.Join(refsDir, entry.Name()))
+		data, err := util.SafeReadFile(dir, filepath.Join(refsDir, entry.Name()))
 		if err != nil {
 			continue
 		}

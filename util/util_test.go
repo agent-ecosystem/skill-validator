@@ -95,7 +95,7 @@ func TestSafeReadFile(t *testing.T) {
 	if err := os.WriteFile(regular, []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, err := SafeReadFile(regular)
+	got, err := SafeReadFile(dir, regular)
 	if err != nil {
 		t.Fatalf("SafeReadFile(regular): %v", err)
 	}
@@ -116,7 +116,7 @@ func TestSafeReadFile(t *testing.T) {
 		if err := os.Symlink(secret, link); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := SafeReadFile(link); !errors.Is(err, ErrUnsafeFile) {
+		if _, err := SafeReadFile(dir, link); !errors.Is(err, ErrUnsafeFile) {
 			t.Errorf("SafeReadFile(symlink) error = %v, want ErrUnsafeFile", err)
 		}
 		if IsRegularFile(link) {
@@ -125,14 +125,75 @@ func TestSafeReadFile(t *testing.T) {
 	}
 
 	missing := filepath.Join(dir, "missing.txt")
-	if _, err := SafeReadFile(missing); err == nil {
+	if _, err := SafeReadFile(dir, missing); err == nil {
 		t.Errorf("SafeReadFile(missing) error = nil, want non-nil")
 	}
 	if IsRegularFile(missing) {
 		t.Errorf("IsRegularFile(missing) = true, want false")
 	}
 
-	if _, err := SafeReadFile(dir); !errors.Is(err, ErrUnsafeFile) {
+	if _, err := SafeReadFile(dir, dir); !errors.Is(err, ErrUnsafeFile) {
 		t.Errorf("SafeReadFile(dir) error = %v, want ErrUnsafeFile", err)
+	}
+}
+
+// TestSafeReadFile_SymlinkedDirectory covers issue #88: a regular file inside
+// a symlinked directory passes a leaf-only Lstat check, but its resolved path
+// escapes the skill root and must be refused.
+func TestSafeReadFile_SymlinkedDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks require admin on Windows")
+	}
+
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.md"), []byte("OUT-OF-TREE"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	root := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "references")); err != nil {
+		t.Fatal(err)
+	}
+
+	// The leaf is a regular file, so only the resolved-path containment
+	// check can catch the escape.
+	leaked := filepath.Join(root, "references", "secret.md")
+	if _, err := SafeReadFile(root, leaked); !errors.Is(err, ErrUnsafeFile) {
+		t.Errorf("SafeReadFile(file in symlinked dir) error = %v, want ErrUnsafeFile", err)
+	}
+
+	// A symlinked subdirectory that stays inside the root is fine.
+	if err := os.MkdirAll(filepath.Join(root, "assets", "real"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "assets", "real", "ok.md"), []byte("fine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "assets", "real"), filepath.Join(root, "alias")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SafeReadFile(root, filepath.Join(root, "alias", "ok.md")); err != nil {
+		t.Errorf("SafeReadFile(file in in-tree symlinked dir) error = %v, want nil", err)
+	}
+}
+
+func TestResolvesWithin(t *testing.T) {
+	root := t.TempDir()
+	sub := filepath.Join(root, "references")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	inside, err := ResolvesWithin(root, sub)
+	if err != nil || !inside {
+		t.Errorf("ResolvesWithin(root, root/references) = %v, %v; want true, nil", inside, err)
+	}
+	inside, err = ResolvesWithin(root, root)
+	if err != nil || !inside {
+		t.Errorf("ResolvesWithin(root, root) = %v, %v; want true, nil", inside, err)
+	}
+	outside := t.TempDir()
+	inside, err = ResolvesWithin(root, outside)
+	if err != nil || inside {
+		t.Errorf("ResolvesWithin(root, outside) = %v, %v; want false, nil", inside, err)
 	}
 }
