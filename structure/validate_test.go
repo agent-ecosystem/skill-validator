@@ -107,6 +107,47 @@ func TestValidate(t *testing.T) {
 		requireResultContaining(t, report.Results, types.Error, "build pipeline issue")
 	})
 
+	t.Run("excluded token paths do not contribute to skill ratio", func(t *testing.T) {
+		dir := t.TempDir()
+		writeSkill(t, dir, "---\nname: "+dirName(dir)+"\ndescription: desc\n---\n# Body\n")
+		writeFile(t, dir, "site/generated.md", generateContent(30_000))
+		writeFile(t, dir, "docs/guide.md", "small non-standard content")
+
+		report := Validate(dir, Options{
+			AllowDirs:         []string{"site", "docs"},
+			ExcludeTokenPaths: []string{"site"},
+			SkipOrphans:       true,
+		})
+
+		requireNoResultContaining(t, report.Results, types.Error, "doesn't appear to be structured as a skill")
+		files := tokenCountFiles(report.OtherTokenCounts)
+		if files["site/generated.md"] {
+			t.Error("excluded site content contributed to holistic ratio inputs")
+		}
+		if !files["docs/guide.md"] {
+			t.Error("non-excluded content should remain in holistic ratio inputs")
+		}
+		requireResultContaining(t, report.Results, types.Info, "excluded from token accounting: site")
+	})
+
+	t.Run("excluded token paths remain subject to structure and link checks", func(t *testing.T) {
+		dir := t.TempDir()
+		writeSkill(t, dir, "---\nname: "+dirName(dir)+"\ndescription: desc\n---\n# Body\n[missing](site/missing.md)\n")
+		writeFile(t, dir, "site/generated.md", "generated content")
+
+		report := Validate(dir, Options{
+			ExcludeTokenPaths: []string{"site"},
+			SkipOrphans:       true,
+		})
+
+		requireResultContaining(t, report.Results, types.Warning, "unknown directory: site/")
+		requireResultContaining(t, report.Results, types.Error, "broken internal link: site/missing.md")
+		requireResultContaining(t, report.Results, types.Info, "excluded from token accounting: site")
+		if len(report.OtherTokenCounts) != 0 {
+			t.Errorf("expected excluded site to be absent from other token counts, got %#v", report.OtherTokenCounts)
+		}
+	})
+
 	t.Run("no skill ratio error when other content is small", func(t *testing.T) {
 		dir := t.TempDir()
 		writeSkill(t, dir, "---\nname: "+dirName(dir)+"\ndescription: desc\n---\n# Body\n")

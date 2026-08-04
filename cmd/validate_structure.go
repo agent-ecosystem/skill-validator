@@ -16,6 +16,7 @@ var (
 	structAllowFlatLayouts      bool
 	structAllowDirs             []string
 	structAllowNestedPaths      []string
+	structExcludeTokenPaths     []string
 )
 
 var validateStructureCmd = &cobra.Command{
@@ -38,6 +39,8 @@ func init() {
 		"comma-separated list of directory names to accept without warnings (e.g. --allow-dirs=evals,testing)")
 	validateStructureCmd.Flags().StringSliceVar(&structAllowNestedPaths, "allow-nested-paths", nil,
 		"comma-separated skill-relative paths where deep nesting is allowed (e.g. --allow-nested-paths=assets/components)")
+	validateStructureCmd.Flags().StringSliceVar(&structExcludeTokenPaths, "exclude-token-paths", nil,
+		"comma-separated skill-relative subtrees to exclude from non-standard token accounting (e.g. --exclude-token-paths=site)")
 	validateCmd.AddCommand(validateStructureCmd)
 }
 
@@ -45,6 +48,11 @@ func runValidateStructure(cmd *cobra.Command, args []string) error {
 	allowNestedPaths, err := structure.NormalizeRelativePaths(structAllowNestedPaths)
 	if err != nil {
 		return fmt.Errorf("invalid --allow-nested-paths: %w", err)
+	}
+
+	excludeTokenPaths, err := structure.NormalizeRelativePaths(structExcludeTokenPaths)
+	if err != nil {
+		return fmt.Errorf("invalid --exclude-token-paths: %w", err)
 	}
 
 	_, mode, dirs, err := detectAndResolve(args)
@@ -58,6 +66,7 @@ func runValidateStructure(cmd *cobra.Command, args []string) error {
 		AllowFlatLayouts:      structAllowFlatLayouts,
 		AllowDirs:             structAllowDirs,
 		AllowNestedPaths:      allowNestedPaths,
+		ExcludeTokenPaths:     excludeTokenPaths,
 	}
 	eopts := exitOpts{strict: strictStructure}
 

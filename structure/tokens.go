@@ -171,7 +171,12 @@ func CheckTokens(dir, body string, opts Options) ([]types.Result, []types.TokenC
 	}
 
 	// Count tokens in non-standard files
-	otherCounts := countOtherFiles(dir, enc, opts)
+	exclusions := newTokenPathExclusions(opts.ExcludeTokenPaths)
+	otherCounts := countOtherFiles(dir, enc, opts, exclusions)
+
+	for _, excludedPath := range exclusions.appliedPaths() {
+		results = append(results, ctx.Infof("excluded from token accounting: %s", excludedPath))
+	}
 
 	// Check other-files aggregate limits
 	otherTotal := 0
@@ -278,7 +283,41 @@ func countAssetFiles(dir string, enc tokenizer.Codec) []types.TokenCount {
 	return counts
 }
 
-func countOtherFiles(dir string, enc tokenizer.Codec, opts Options) []types.TokenCount {
+type tokenPathExclusions struct {
+	paths   []string
+	applied map[string]bool
+}
+
+func newTokenPathExclusions(paths []string) *tokenPathExclusions {
+	normalized := normalizedRelativePaths(paths)
+	return &tokenPathExclusions{
+		paths:   normalized,
+		applied: make(map[string]bool, len(normalized)),
+	}
+}
+
+func (e *tokenPathExclusions) excludes(candidate string) bool {
+	candidate = filepath.ToSlash(candidate)
+	for _, excludedPath := range e.paths {
+		if pathInSubtree(candidate, excludedPath) {
+			e.applied[excludedPath] = true
+			return true
+		}
+	}
+	return false
+}
+
+func (e *tokenPathExclusions) appliedPaths() []string {
+	var paths []string
+	for _, excludedPath := range e.paths {
+		if e.applied[excludedPath] {
+			paths = append(paths, excludedPath)
+		}
+	}
+	return paths
+}
+
+func countOtherFiles(dir string, enc tokenizer.Codec, opts Options, exclusions *tokenPathExclusions) []types.TokenCount {
 	var counts []types.TokenCount
 
 	entries, err := os.ReadDir(dir)
@@ -296,13 +335,19 @@ func countOtherFiles(dir string, enc tokenizer.Codec, opts Options) []types.Toke
 			if standardDirs[strings.ToLower(name)] {
 				continue
 			}
+			if exclusions.excludes(name) {
+				continue
+			}
 			// Walk files in unknown directory
-			counts = append(counts, countFilesInDir(dir, name, enc)...)
+			counts = append(counts, countFilesInDir(dir, name, enc, exclusions)...)
 		} else {
 			if !entry.Type().IsRegular() {
 				continue
 			}
 			if standardRootFiles[strings.ToLower(name)] || opts.AllowFlatLayouts {
+				continue
+			}
+			if exclusions.excludes(name) {
 				continue
 			}
 			if binaryExtensions[strings.ToLower(filepath.Ext(name))] {
@@ -320,7 +365,7 @@ func countOtherFiles(dir string, enc tokenizer.Codec, opts Options) []types.Toke
 	return counts
 }
 
-func countFilesInDir(rootDir, dirName string, enc tokenizer.Codec) []types.TokenCount {
+func countFilesInDir(rootDir, dirName string, enc tokenizer.Codec, exclusions *tokenPathExclusions) []types.TokenCount {
 	var counts []types.TokenCount
 	fullDir := filepath.Join(rootDir, dirName)
 
@@ -332,9 +377,22 @@ func countFilesInDir(rootDir, dirName string, enc tokenizer.Codec) []types.Token
 			if strings.HasPrefix(info.Name(), ".") && path != fullDir {
 				return filepath.SkipDir
 			}
+			if path != fullDir {
+				rel, relErr := filepath.Rel(rootDir, path)
+				if relErr == nil && exclusions.excludes(rel) {
+					return filepath.SkipDir
+				}
+			}
 			return nil
 		}
 		if strings.HasPrefix(info.Name(), ".") {
+			return nil
+		}
+		rel, relErr := filepath.Rel(rootDir, path)
+		if relErr != nil {
+			return nil
+		}
+		if exclusions.excludes(rel) {
 			return nil
 		}
 		if binaryExtensions[strings.ToLower(filepath.Ext(info.Name()))] {
@@ -344,7 +402,6 @@ func countFilesInDir(rootDir, dirName string, enc tokenizer.Codec) []types.Token
 		if err != nil {
 			return nil
 		}
-		rel, _ := filepath.Rel(rootDir, path)
 		tokens, _, _ := enc.Encode(string(data))
 		counts = append(counts, types.TokenCount{File: filepath.ToSlash(rel), Tokens: len(tokens)})
 		return nil

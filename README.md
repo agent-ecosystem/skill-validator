@@ -36,6 +36,7 @@ Spec compliance is table stakes. `skill-validator` goes further: it checks that 
     - [Flat skill layouts](#flat-skill-layouts)
     - [Allowing non-standard directories](#allowing-non-standard-directories)
     - [Allowing nesting at specific paths](#allowing-nesting-at-specific-paths)
+    - [Excluding paths from non-standard token accounting](#excluding-paths-from-non-standard-token-accounting)
   - [Link validation](#link-validation-validate-links)
   - [Content analysis](#content-analysis-analyze-content)
   - [Contamination analysis](#contamination-analysis-analyze-contamination)
@@ -190,6 +191,7 @@ skill-validator validate structure --allow-extra-frontmatter <path>
 skill-validator validate structure --allow-flat-layouts <path>
 skill-validator validate structure --allow-dirs=evals,testing <path>
 skill-validator validate structure --allow-nested-paths=assets/components <path>
+skill-validator validate structure --exclude-token-paths=site <path>
 ```
 
 Checks spec compliance: directory structure, frontmatter fields, token limits, skill ratio, code fence integrity, internal link validity, and orphan file detection.
@@ -202,6 +204,7 @@ Checks spec compliance: directory structure, frontmatter fields, token limits, s
 | `--allow-flat-layouts` | Allow files at the skill root without warnings (see [Flat skill layouts](#flat-skill-layouts)) |
 | `--allow-dirs=evals,testing` | Accept specific non-standard directories without warnings (see [Allowing non-standard directories](#allowing-non-standard-directories)) |
 | `--allow-nested-paths=assets/components` | Allow deep nesting only within specific skill-relative paths (see [Allowing nesting at specific paths](#allowing-nesting-at-specific-paths)) |
+| `--exclude-token-paths=site` | Exclude specific skill-relative subtrees from non-standard token accounting (see [Excluding paths from non-standard token accounting](#excluding-paths-from-non-standard-token-accounting)) |
 
 ```
 Validating skill: my-skill/
@@ -300,6 +303,7 @@ skill-validator check --allow-extra-frontmatter <path>
 skill-validator check --allow-flat-layouts <path>
 skill-validator check --allow-dirs=evals,testing <path>
 skill-validator check --allow-nested-paths=assets/components <path>
+skill-validator check --exclude-token-paths=site <path>
 ```
 
 Runs all checks (structure + links + content + contamination).
@@ -315,6 +319,7 @@ Runs all checks (structure + links + content + contamination).
 | `--allow-flat-layouts` | Allow files at the skill root without warnings (see [Flat skill layouts](#flat-skill-layouts)) |
 | `--allow-dirs=evals,testing` | Accept specific non-standard directories without warnings (see [Allowing non-standard directories](#allowing-non-standard-directories)) |
 | `--allow-nested-paths=assets/components` | Allow deep nesting only within specific skill-relative paths (see [Allowing nesting at specific paths](#allowing-nesting-at-specific-paths)) |
+| `--exclude-token-paths=site` | Exclude specific skill-relative subtrees from non-standard token accounting (see [Excluding paths from non-standard token accounting](#excluding-paths-from-non-standard-token-accounting)) |
 
 Valid check groups: `structure`, `links`, `content`, `contamination`.
 
@@ -784,6 +789,21 @@ skill-validator check --allow-nested-paths=assets/components,assets/themes my-sk
 Paths are relative to the skill root. The flag accepts a comma-separated list or can be repeated, normalizes `/` and `\` separators, and rejects absolute paths or paths that escape the skill root. Matching observes path boundaries: allowing `assets/components` does not allow `assets/components-extra`.
 
 This option affects only deep-nesting warnings. Structure checks outside the selected subtree and all frontmatter, orphan, token, Markdown, and link checks continue unchanged. When a nesting warning is suppressed, the report includes an informational result identifying the allowed path.
+
+**Excluding paths from non-standard token accounting**
+
+Some skill packages commit generated output for portability or as a reference contract even though agents do not load it as instruction or reference content. Use `--exclude-token-paths` to remove an explicitly selected subtree from non-standard token accounting:
+
+```
+skill-validator validate structure --allow-dirs=site --exclude-token-paths=site my-skill/
+skill-validator check --allow-dirs=site --exclude-token-paths=site,dist my-skill/
+```
+
+Excluded files do not appear in the "Other files" per-file table, do not contribute to its aggregate token limit, and do not contribute to the holistic standard-to-non-standard content ratio. Other non-standard files remain counted.
+
+Paths are relative to the skill root. The flag accepts a comma-separated list or can be repeated, normalizes `/` and `\` separators, rejects absolute paths or paths that escape the skill root, and observes path boundaries. For example, excluding `site` does not exclude `site-extra`.
+
+This option affects only non-standard token accounting. It does not allow an unknown directory, suppress orphan detection, or bypass frontmatter, structure, Markdown, or link validation. When files are excluded, the report includes an informational result identifying the excluded path.
 
 ### Link validation (`validate links`)
 

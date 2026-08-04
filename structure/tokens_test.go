@@ -266,6 +266,53 @@ func TestCountOtherFiles(t *testing.T) {
 			t.Fatalf("expected 0 other counts, got %d", len(otherCounts))
 		}
 	})
+
+	t.Run("exclude-token-paths removes only the selected subtree", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "site/index.html", "generated site")
+		writeFile(t, dir, "site/assets/app.js", "generated JavaScript")
+		writeFile(t, dir, "site-extra/index.html", "must remain")
+		writeFile(t, dir, "docs/guide.md", "must also remain")
+
+		results, _, otherCounts := CheckTokens(dir, "body", Options{ExcludeTokenPaths: []string{"site"}})
+
+		files := tokenCountFiles(otherCounts)
+		if files["site/index.html"] || files["site/assets/app.js"] {
+			t.Errorf("excluded site subtree remained in token counts: %#v", files)
+		}
+		if !files["site-extra/index.html"] {
+			t.Error("similar-prefix sibling site-extra/index.html was incorrectly excluded")
+		}
+		if !files["docs/guide.md"] {
+			t.Error("non-excluded docs/guide.md was incorrectly excluded")
+		}
+		requireResultContaining(t, results, types.Info, "excluded from token accounting: site")
+	})
+
+	t.Run("exclude-token-paths normalizes Windows separators", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "generated/site/index.html", "generated site")
+		writeFile(t, dir, "generated/source.md", "must remain")
+
+		results, _, otherCounts := CheckTokens(dir, "body", Options{ExcludeTokenPaths: []string{`generated\site`}})
+
+		files := tokenCountFiles(otherCounts)
+		if files["generated/site/index.html"] {
+			t.Error("Windows-separated excluded path remained in token counts")
+		}
+		if !files["generated/source.md"] {
+			t.Error("sibling file outside excluded subtree was incorrectly excluded")
+		}
+		requireResultContaining(t, results, types.Info, "excluded from token accounting: generated/site")
+	})
+}
+
+func tokenCountFiles(counts []types.TokenCount) map[string]bool {
+	files := make(map[string]bool, len(counts))
+	for _, count := range counts {
+		files[count.File] = true
+	}
+	return files
 }
 
 func TestCheckTokens_OtherFilesLimits(t *testing.T) {
@@ -297,6 +344,41 @@ func TestCheckTokens_OtherFilesLimits(t *testing.T) {
 		results, _, _ := CheckTokens(dir, "body", Options{})
 		requireResultContaining(t, results, types.Error, "non-standard files total")
 		requireResultContaining(t, results, types.Error, "severely degrade performance")
+	})
+
+	t.Run("excluded content does not contribute to aggregate limit", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "site/generated.md", generateContent(30_000))
+		writeFile(t, dir, "docs/guide.md", generateContent(5_000))
+
+		results, _, otherCounts := CheckTokens(dir, "body", Options{ExcludeTokenPaths: []string{"site"}})
+
+		requireNoResultContaining(t, results, types.Warning, "non-standard files total")
+		requireNoResultContaining(t, results, types.Error, "non-standard files total")
+		files := tokenCountFiles(otherCounts)
+		if files["site/generated.md"] {
+			t.Error("excluded file contributed to other token counts")
+		}
+		if !files["docs/guide.md"] {
+			t.Error("non-excluded content should remain in other token counts")
+		}
+	})
+
+	t.Run("non-excluded content still triggers aggregate limit", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "site/generated.md", generateContent(30_000))
+		writeFile(t, dir, "docs/guide.md", generateContent(30_000))
+
+		results, _, otherCounts := CheckTokens(dir, "body", Options{ExcludeTokenPaths: []string{"site"}})
+
+		requireResultContaining(t, results, types.Warning, "non-standard files total")
+		files := tokenCountFiles(otherCounts)
+		if files["site/generated.md"] {
+			t.Error("excluded file contributed to other token counts")
+		}
+		if !files["docs/guide.md"] {
+			t.Error("non-excluded warning-producing content should remain counted")
+		}
 	})
 }
 
