@@ -11,7 +11,7 @@ import (
 	"github.com/agent-ecosystem/skill-validator/types"
 )
 
-const version = "v1.6.0"
+const version = "v1.6.1"
 
 var (
 	outputFormat    string

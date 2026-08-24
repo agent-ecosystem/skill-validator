@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1]
+
+### Fixed
+
+- Skills with non-string `metadata` values (nested lists or maps) no longer
+  fail to load with a raw YAML parse error ([#92]). The spec still requires
+  string keys and string values; violations now surface as the existing
+  per-key frontmatter validation errors, and scoring can proceed.
+- LLM judge failures with "no valid JSON object found in response" ([#91]):
+  the judge model could mistake the harness's own trailing anti-injection
+  reminder for injected content and respond with commentary instead of
+  JSON. The judge prompts now announce the content delimiters and reminder
+  as part of the harness, the reminder no longer contradicts the plain-text
+  novelty follow-up, and scoring retries once with a strengthened prompt
+  when a response contains no parseable JSON.
+
 ## [1.6.0]
 
 ### Added
@@ -245,6 +261,7 @@ First stable release. Includes the complete CLI and importable library packages.
 - `types` — shared data types (`Report`, `Result`, `Level`, etc.)
 - `judge.LLMClient` interface for custom LLM providers
 
+[1.6.1]: https://github.com/agent-ecosystem/skill-validator/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/agent-ecosystem/skill-validator/compare/v1.5.6...v1.6.0
 [1.5.6]: https://github.com/agent-ecosystem/skill-validator/compare/v1.5.5...v1.5.6
 [1.5.5]: https://github.com/agent-ecosystem/skill-validator/compare/v1.5.4...v1.5.5
@@ -286,6 +303,8 @@ First stable release. Includes the complete CLI and importable library packages.
 [#88]: https://github.com/agent-ecosystem/skill-validator/issues/88
 [#89]: https://github.com/agent-ecosystem/skill-validator/pull/89
 [#90]: https://github.com/agent-ecosystem/skill-validator/pull/90
+[#91]: https://github.com/agent-ecosystem/skill-validator/issues/91
+[#92]: https://github.com/agent-ecosystem/skill-validator/issues/92
 [@aminmesbahi]: https://github.com/aminmesbahi
 [@choplin]: https://github.com/choplin
 [@pinghe]: https://github.com/pinghe
