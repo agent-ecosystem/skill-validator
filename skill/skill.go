@@ -17,12 +17,17 @@ var _ yaml.Unmarshaler = (*AllowedTools)(nil)
 
 // Frontmatter represents the parsed YAML frontmatter of a SKILL.md file.
 type Frontmatter struct {
-	Name          string            `yaml:"name"`
-	Description   string            `yaml:"description"`
-	License       string            `yaml:"license"`
-	Compatibility string            `yaml:"compatibility"`
-	Metadata      map[string]string `yaml:"metadata"`
-	AllowedTools  AllowedTools      `yaml:"allowed-tools"`
+	Name          string `yaml:"name"`
+	Description   string `yaml:"description"`
+	License       string `yaml:"license"`
+	Compatibility string `yaml:"compatibility"`
+	// Metadata holds the spec-conforming entries of the metadata map: the
+	// spec requires string keys and string values. It is populated from
+	// RawFrontmatter in Load rather than unmarshaled directly so that
+	// non-conforming entries (lists, maps, non-string scalars) surface as
+	// structure validation errors instead of failing the YAML parse.
+	Metadata     map[string]string `yaml:"-"`
+	AllowedTools AllowedTools      `yaml:"allowed-tools"`
 }
 
 // AllowedTools handles the type ambiguity in the allowed-tools field.
@@ -106,6 +111,14 @@ func Load(dir string) (*Skill, error) {
 		}
 		if err := yaml.Unmarshal([]byte(fm), &skill.RawFrontmatter); err != nil {
 			return nil, fmt.Errorf("parsing raw frontmatter: %w", err)
+		}
+		if md, ok := skill.RawFrontmatter["metadata"].(map[string]any); ok {
+			skill.Frontmatter.Metadata = map[string]string{}
+			for k, v := range md {
+				if s, ok := v.(string); ok {
+					skill.Frontmatter.Metadata[k] = s
+				}
+			}
 		}
 	}
 
