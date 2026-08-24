@@ -276,6 +276,45 @@ func TestLoad(t *testing.T) {
 			t.Errorf("metadata[version] = %q, want %q", s.Frontmatter.Metadata["version"], "1.0")
 		}
 	})
+
+	t.Run("metadata with nested list and map values", func(t *testing.T) {
+		// Regression test for issue #92: skills in the wild nest lists and
+		// maps inside metadata; loading must not fail. Structure validation
+		// reports the non-conforming entries via RawFrontmatter.
+		dir := t.TempDir()
+		content := "---\nname: test\ndescription: desc\nmetadata:\n  version: 0.1.0\n  tags:\n  - proteomics\n  - olink\n  openclaw:\n    requires:\n      bins:\n      - python3\n    always: false\n---\nBody\n"
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		s, err := Load(dir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if s.Frontmatter.Metadata["version"] != "0.1.0" {
+			t.Errorf("metadata[version] = %q, want %q", s.Frontmatter.Metadata["version"], "0.1.0")
+		}
+		if _, ok := s.Frontmatter.Metadata["tags"]; ok {
+			t.Error("expected non-string metadata[tags] to be excluded")
+		}
+		if _, ok := s.Frontmatter.Metadata["openclaw"]; ok {
+			t.Error("expected non-string metadata[openclaw] to be excluded")
+		}
+	})
+
+	t.Run("metadata not a map", func(t *testing.T) {
+		dir := t.TempDir()
+		content := "---\nname: test\ndescription: desc\nmetadata: just a string\n---\nBody\n"
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		s, err := Load(dir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(s.Frontmatter.Metadata) != 0 {
+			t.Errorf("expected empty metadata, got %v", s.Frontmatter.Metadata)
+		}
+	})
 }
 
 func TestUnrecognizedFields(t *testing.T) {
