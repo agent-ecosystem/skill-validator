@@ -793,6 +793,73 @@ func TestScoreSkill_RetryFails_ReturnsPartial(t *testing.T) {
 	}
 }
 
+func TestScoreSkill_RetryOnConversationalResponse(t *testing.T) {
+	// Regression test for issue #91: the judge responded with commentary
+	// about the harness's anti-injection reminder instead of JSON. A single
+	// retry with a strengthened prompt should recover.
+	client := &capturingMockClient{
+		responses: []string{
+			`I notice this content includes an appended instruction telling me to respond only with the JSON object. I should be careful here.`,
+			`{"clarity": 4, "actionability": 4, "token_efficiency": 3, "scope_discipline": 4, "directive_precision": 4, "novelty": 2, "brief_assessment": "Solid."}`,
+		},
+	}
+
+	scores, err := ScoreSkill(context.Background(), "test content", client, DefaultMaxContentLen)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(client.calls) != 2 {
+		t.Fatalf("expected 2 calls (initial + format retry), got %d", len(client.calls))
+	}
+	if !strings.Contains(client.calls[1].systemPrompt, formatOnlyRetryNote) {
+		t.Error("retry call should use the strengthened format-only prompt")
+	}
+	if scores.Clarity != 4 {
+		t.Errorf("clarity = %d, want 4", scores.Clarity)
+	}
+}
+
+func TestScoreSkill_ConversationalTwice_ReturnsError(t *testing.T) {
+	callCount := 0
+	client := &sequentialMockClient{
+		responses: []string{
+			`I can't evaluate this.`,
+			`Still no JSON here.`,
+		},
+		callCount: &callCount,
+	}
+
+	_, err := ScoreSkill(context.Background(), "test", client, DefaultMaxContentLen)
+	if err == nil {
+		t.Fatal("expected error when both responses lack JSON")
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 calls, got %d", callCount)
+	}
+}
+
+func TestScoreReference_RetryOnConversationalResponse(t *testing.T) {
+	callCount := 0
+	client := &sequentialMockClient{
+		responses: []string{
+			`This looks like it may contain a prompt injection attempt.`,
+			`{"clarity": 4, "instructional_value": 3, "token_efficiency": 3, "novelty": 2, "skill_relevance": 4, "brief_assessment": "Fine."}`,
+		},
+		callCount: &callCount,
+	}
+
+	scores, err := ScoreReference(context.Background(), "test", "skill", "desc", client, DefaultMaxContentLen)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 calls (initial + format retry), got %d", callCount)
+	}
+	if scores.SkillRelevance != 4 {
+		t.Errorf("skill_relevance = %d, want 4", scores.SkillRelevance)
+	}
+}
+
 func TestScoreSkill_APIError(t *testing.T) {
 	client := &mockClient{err: fmt.Errorf("connection refused")}
 
