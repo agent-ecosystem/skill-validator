@@ -252,14 +252,16 @@ const (
 
 var controlCharStripper = regexp.MustCompile(`[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]`)
 
+// maxStringFieldChars caps free-text fields that flow into or out of the
+// judge. It is measured in characters (Unicode code points) so that a
+// spec-compliant 1024-character description is passed through whole
+// rather than cut to a fraction of its length by a byte count.
+const maxStringFieldChars = 1024
+
 func sanitizeStringField(s string) string {
 	s = controlCharStripper.ReplaceAllString(s, "")
-	if len(s) > 1024 {
-		s = s[:1024]
-		// Back off any partial UTF-8 sequence left by the byte-boundary cut.
-		for len(s) > 0 && !utf8.ValidString(s) {
-			s = s[:len(s)-1]
-		}
+	if utf8.RuneCountInString(s) > maxStringFieldChars {
+		s = string([]rune(s)[:maxStringFieldChars])
 	}
 	return s
 }

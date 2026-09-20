@@ -1038,14 +1038,20 @@ func TestSanitizeStringField(t *testing.T) {
 		t.Errorf("truncated len = %d, want 1024", len(got))
 	}
 
-	// A multi-byte rune straddling the 1024-byte boundary must not be split.
-	straddle := strings.Repeat("x", 1023) + "é" + strings.Repeat("y", 100)
-	got := sanitizeStringField(straddle)
-	if !utf8.ValidString(got) {
-		t.Errorf("truncation produced invalid UTF-8: %q", got[1015:])
+	// The cap is in characters, not bytes: a spec-compliant 1024-character
+	// CJK description (3072 bytes) must pass through untouched.
+	cjk := strings.Repeat("\u6f22", 1024)
+	if got := sanitizeStringField(cjk); got != cjk {
+		t.Errorf("1024-character multibyte string was altered (len %d, want %d)", len(got), len(cjk))
 	}
-	if len(got) != 1023 {
-		t.Errorf("truncated len = %d, want 1023 (partial rune dropped)", len(got))
+
+	// Over the cap, truncation lands on a character boundary.
+	got := sanitizeStringField(strings.Repeat("\u6f22", 2000))
+	if !utf8.ValidString(got) {
+		t.Errorf("truncation produced invalid UTF-8")
+	}
+	if n := utf8.RuneCountInString(got); n != 1024 {
+		t.Errorf("truncated rune count = %d, want 1024", n)
 	}
 }
 

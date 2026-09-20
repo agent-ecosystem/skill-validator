@@ -4,12 +4,23 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/agent-ecosystem/skill-validator/skill"
 	"github.com/agent-ecosystem/skill-validator/types"
 )
 
 var namePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// Field length limits from the spec are in characters, which this package
+// counts as Unicode code points (the same unit as the skills-ref reference
+// validator). Counting bytes would reject multibyte descriptions well
+// below the limit.
+const (
+	maxNameChars          = 64
+	maxDescriptionChars   = 1024
+	maxCompatibilityChars = 500
+)
 
 // CheckFrontmatter validates the YAML frontmatter of a parsed skill. It checks
 // required fields (name, description), enforces format and length constraints,
@@ -23,8 +34,8 @@ func CheckFrontmatter(s *skill.Skill, opts Options) []types.Result {
 	if name == "" {
 		results = append(results, ctx.Error("name is required"))
 	} else {
-		if len(name) > 64 {
-			results = append(results, ctx.Errorf("name exceeds 64 characters (%d)", len(name)))
+		if n := utf8.RuneCountInString(name); n > maxNameChars {
+			results = append(results, ctx.Errorf("name exceeds %d characters (%d)", maxNameChars, n))
 		}
 		if !namePattern.MatchString(name) {
 			results = append(results, ctx.Errorf("name %q must be lowercase alphanumeric with hyphens, no leading/trailing/consecutive hyphens", name))
@@ -43,12 +54,12 @@ func CheckFrontmatter(s *skill.Skill, opts Options) []types.Result {
 	desc := s.Frontmatter.Description
 	if desc == "" {
 		results = append(results, ctx.Error("description is required"))
-	} else if len(desc) > 1024 {
-		results = append(results, ctx.Errorf("description exceeds 1024 characters (%d)", len(desc)))
+	} else if n := utf8.RuneCountInString(desc); n > maxDescriptionChars {
+		results = append(results, ctx.Errorf("description exceeds %d characters (%d)", maxDescriptionChars, n))
 	} else if strings.TrimSpace(desc) == "" {
 		results = append(results, ctx.Error("description must not be empty/whitespace-only"))
 	} else {
-		results = append(results, ctx.Passf("description: (%d chars)", len(desc)))
+		results = append(results, ctx.Passf("description: (%d chars)", n))
 		results = append(results, checkDescriptionKeywordStuffing(ctx, desc)...)
 	}
 
@@ -59,10 +70,10 @@ func CheckFrontmatter(s *skill.Skill, opts Options) []types.Result {
 
 	// Check optional compatibility
 	if s.Frontmatter.Compatibility != "" {
-		if len(s.Frontmatter.Compatibility) > 500 {
-			results = append(results, ctx.Errorf("compatibility exceeds 500 characters (%d)", len(s.Frontmatter.Compatibility)))
+		if n := utf8.RuneCountInString(s.Frontmatter.Compatibility); n > maxCompatibilityChars {
+			results = append(results, ctx.Errorf("compatibility exceeds %d characters (%d)", maxCompatibilityChars, n))
 		} else {
-			results = append(results, ctx.Passf("compatibility: (%d chars)", len(s.Frontmatter.Compatibility)))
+			results = append(results, ctx.Passf("compatibility: (%d chars)", n))
 		}
 	}
 
