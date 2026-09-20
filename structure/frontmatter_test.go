@@ -47,6 +47,15 @@ func TestCheckFrontmatter_Name(t *testing.T) {
 		requireResult(t, results, types.Error, "name exceeds 64 characters (65)")
 	})
 
+	t.Run("name length counts characters, not bytes", func(t *testing.T) {
+		// 40 two-byte runes: 80 bytes, 40 characters. The name pattern
+		// rejects it, but the length check must not.
+		name := strings.Repeat("\u00e9", 40)
+		s := makeSkill("/tmp/"+name, name, "A description")
+		results := CheckFrontmatter(s, Options{})
+		requireNoResultContaining(t, results, types.Error, "exceeds 64 characters")
+	})
+
 	t.Run("name with uppercase", func(t *testing.T) {
 		s := makeSkill("/tmp/My-Skill", "My-Skill", "A description")
 		results := CheckFrontmatter(s, Options{})
@@ -106,6 +115,23 @@ func TestCheckFrontmatter_Description(t *testing.T) {
 	t.Run("description too long", func(t *testing.T) {
 		longDesc := strings.Repeat("x", 1025)
 		s := makeSkill("/tmp/my-skill", "my-skill", longDesc)
+		results := CheckFrontmatter(s, Options{})
+		requireResult(t, results, types.Error, "description exceeds 1024 characters (1025)")
+	})
+
+	t.Run("multibyte description under the limit", func(t *testing.T) {
+		// 342 CJK characters is 1026 UTF-8 bytes: over the limit if
+		// counted in bytes, well under it in characters (#94).
+		desc := strings.Repeat("\u6f22", 342)
+		s := makeSkill("/tmp/my-skill", "my-skill", desc)
+		results := CheckFrontmatter(s, Options{})
+		requireNoResultContaining(t, results, types.Error, "description exceeds")
+		requireResultContaining(t, results, types.Pass, "description: (342 chars)")
+	})
+
+	t.Run("multibyte description over the limit", func(t *testing.T) {
+		desc := strings.Repeat("\u6f22", 1025)
+		s := makeSkill("/tmp/my-skill", "my-skill", desc)
 		results := CheckFrontmatter(s, Options{})
 		requireResult(t, results, types.Error, "description exceeds 1024 characters (1025)")
 	})
@@ -365,6 +391,22 @@ func TestCheckFrontmatter_Compatibility(t *testing.T) {
 	t.Run("compatibility too long", func(t *testing.T) {
 		s := makeSkill("/tmp/my-skill", "my-skill", "desc")
 		s.Frontmatter.Compatibility = strings.Repeat("x", 501)
+		results := CheckFrontmatter(s, Options{})
+		requireResult(t, results, types.Error, "compatibility exceeds 500 characters (501)")
+	})
+
+	t.Run("multibyte compatibility under the limit", func(t *testing.T) {
+		// 400 CJK characters is 1200 bytes but only 400 characters.
+		s := makeSkill("/tmp/my-skill", "my-skill", "desc")
+		s.Frontmatter.Compatibility = strings.Repeat("\u6f22", 400)
+		results := CheckFrontmatter(s, Options{})
+		requireNoResultContaining(t, results, types.Error, "compatibility exceeds")
+		requireResultContaining(t, results, types.Pass, "compatibility: (400 chars)")
+	})
+
+	t.Run("multibyte compatibility over the limit", func(t *testing.T) {
+		s := makeSkill("/tmp/my-skill", "my-skill", "desc")
+		s.Frontmatter.Compatibility = strings.Repeat("\u6f22", 501)
 		results := CheckFrontmatter(s, Options{})
 		requireResult(t, results, types.Error, "compatibility exceeds 500 characters (501)")
 	})
