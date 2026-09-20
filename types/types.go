@@ -42,10 +42,13 @@ type Result struct {
 	Line     int    // 0 = no line info
 }
 
-// TokenCount holds the token count for a single file.
+// TokenCount holds the token count for a single file. Truncated marks a
+// file larger than the read limit, whose count covers only the prefix that
+// was read.
 type TokenCount struct {
-	File   string
-	Tokens int
+	File      string
+	Tokens    int
+	Truncated bool
 }
 
 // ContentReport holds content quality metrics computed by the content analyzer.

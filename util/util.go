@@ -6,6 +6,7 @@ package util
 import (
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -15,27 +16,91 @@ import (
 
 var ErrUnsafeFile = errors.New("refusing to read unsafe file")
 
-// SafeReadFile reads a file from an untrusted skill package rooted at root.
-// It refuses non-regular files (symlinks, devices, pipes) and paths that
-// resolve outside root after following symlinks in any parent directory, so
-// a symlinked file or a symlinked directory inside the package cannot leak
-// content from elsewhere on the machine.
+// ErrFileTooLarge reports a file in a skill package larger than the read
+// limit. Callers that need the whole file (link scanning, fence matching)
+// skip the file and say so; the token counter reads a bounded prefix
+// through SafeReadFileN instead.
+var ErrFileTooLarge = errors.New("file exceeds the read limit")
+
+// MaxSkillFileBytes is the most the validator reads from any single file in
+// a skill package (issue #87). A pathological multi-gigabyte file is never
+// loaded whole: SafeReadFile refuses it, and SafeReadFileN returns only
+// this many bytes.
+const MaxSkillFileBytes int64 = 8 << 20
+
+// FormatByteSize renders a byte count for messages: whole MiB or KiB where
+// exact ("8 MiB"), plain bytes otherwise ("100 bytes").
+func FormatByteSize(n int64) string {
+	switch {
+	case n >= 1<<20 && n%(1<<20) == 0:
+		return fmt.Sprintf("%d MiB", n>>20)
+	case n >= 1<<10 && n%(1<<10) == 0:
+		return fmt.Sprintf("%d KiB", n>>10)
+	default:
+		return fmt.Sprintf("%d bytes", n)
+	}
+}
+
+// SafeReadFile reads a whole file from an untrusted skill package rooted at
+// root. It refuses non-regular files (symlinks, devices, pipes) and paths
+// that resolve outside root after following symlinks in any parent
+// directory, so a symlinked file or a symlinked directory inside the
+// package cannot leak content from elsewhere on the machine. It also
+// refuses, with ErrFileTooLarge, any file larger than MaxSkillFileBytes,
+// without reading past that limit.
 func SafeReadFile(root, path string) ([]byte, error) {
-	info, err := os.Lstat(path)
+	data, truncated, err := SafeReadFileN(root, path, MaxSkillFileBytes)
 	if err != nil {
 		return nil, err
 	}
+	if truncated {
+		return nil, fmt.Errorf("%w: %s is larger than %s", ErrFileTooLarge, path, FormatByteSize(MaxSkillFileBytes))
+	}
+	return data, nil
+}
+
+// SafeReadFileN is SafeReadFile with an explicit byte limit. It reads at
+// most limit bytes and reports whether the file had more; the file is never
+// read past the limit, so memory is bounded regardless of file size.
+func SafeReadFileN(root, path string, limit int64) (data []byte, truncated bool, err error) {
+	if err := checkSafePath(root, path); err != nil {
+		return nil, false, err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() { _ = f.Close() }()
+	// Read one byte past the limit so truncation is detectable without a
+	// second stat (the file can change between Lstat and Open).
+	data, err = io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, false, err
+	}
+	if int64(len(data)) > limit {
+		return data[:limit], true, nil
+	}
+	return data, false, nil
+}
+
+// checkSafePath applies SafeReadFile's regular-file and containment checks
+// without reading anything.
+func checkSafePath(root, path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
 	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("%w: %s is not a regular file", ErrUnsafeFile, path)
+		return fmt.Errorf("%w: %s is not a regular file", ErrUnsafeFile, path)
 	}
 	inside, err := ResolvesWithin(root, path)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if !inside {
-		return nil, fmt.Errorf("%w: %s resolves outside the skill directory", ErrUnsafeFile, path)
+		return fmt.Errorf("%w: %s resolves outside the skill directory", ErrUnsafeFile, path)
 	}
-	return os.ReadFile(path)
+	return nil
 }
 
 // ResolvesWithin reports whether path, after resolving all symlinks in both
