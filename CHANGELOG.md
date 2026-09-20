@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.2]
+
+### Fixed
+
+- Frontmatter length limits are now counted in characters (Unicode code
+  points), not UTF-8 bytes ([#94], thanks [@BoneLiu]). A 984-character
+  CJK description was rejected as "exceeds 1024 characters (2952)"; the
+  `name`, `description`, and `compatibility` limits and the counts in
+  their messages all use the same unit as the spec's `skills-ref`
+  reference validator. The LLM judge's field cap moves to 1024
+  characters for the same reason, so a spec-compliant multibyte
+  description is no longer cut to a third of its length before scoring.
+- File reads from a skill package are bounded at 8 MiB ([#87]). The
+  previous cap truncated only after the whole file had been loaded, and
+  applied only to token counting. Every reader is now bounded: a larger
+  file's token count covers its first 8 MiB and is flagged as truncated
+  (also in JSON output), the unclosed-fence and orphan checks skip it
+  with a warning, and a `SKILL.md` over the limit fails to load with a
+  clear error.
+
 ## [1.6.1]
 
 ### Fixed
@@ -261,6 +281,7 @@ First stable release. Includes the complete CLI and importable library packages.
 - `types` — shared data types (`Report`, `Result`, `Level`, etc.)
 - `judge.LLMClient` interface for custom LLM providers
 
+[1.6.2]: https://github.com/agent-ecosystem/skill-validator/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/agent-ecosystem/skill-validator/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/agent-ecosystem/skill-validator/compare/v1.5.6...v1.6.0
 [1.5.6]: https://github.com/agent-ecosystem/skill-validator/compare/v1.5.5...v1.5.6
@@ -300,11 +321,14 @@ First stable release. Includes the complete CLI and importable library packages.
 [#84]: https://github.com/agent-ecosystem/skill-validator/pull/84
 [#85]: https://github.com/agent-ecosystem/skill-validator/issues/85
 [#86]: https://github.com/agent-ecosystem/skill-validator/issues/86
+[#87]: https://github.com/agent-ecosystem/skill-validator/issues/87
 [#88]: https://github.com/agent-ecosystem/skill-validator/issues/88
 [#89]: https://github.com/agent-ecosystem/skill-validator/pull/89
 [#90]: https://github.com/agent-ecosystem/skill-validator/pull/90
 [#91]: https://github.com/agent-ecosystem/skill-validator/issues/91
 [#92]: https://github.com/agent-ecosystem/skill-validator/issues/92
+[#94]: https://github.com/agent-ecosystem/skill-validator/issues/94
 [@aminmesbahi]: https://github.com/aminmesbahi
+[@BoneLiu]: https://github.com/BoneLiu
 [@choplin]: https://github.com/choplin
 [@pinghe]: https://github.com/pinghe
