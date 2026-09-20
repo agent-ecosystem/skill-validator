@@ -197,3 +197,90 @@ func TestResolvesWithin(t *testing.T) {
 		t.Errorf("ResolvesWithin(root, outside) = %v, %v; want false, nil", inside, err)
 	}
 }
+
+func TestSafeReadFileN(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ten.txt")
+	if err := os.WriteFile(path, []byte("0123456789"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct {
+		limit     int64
+		want      string
+		truncated bool
+	}{
+		{4, "0123", true},
+		{10, "0123456789", false},
+		{20, "0123456789", false},
+	} {
+		got, truncated, err := SafeReadFileN(dir, path, tt.limit)
+		if err != nil {
+			t.Fatalf("SafeReadFileN(limit=%d): %v", tt.limit, err)
+		}
+		if string(got) != tt.want || truncated != tt.truncated {
+			t.Errorf("SafeReadFileN(limit=%d) = %q, %v; want %q, %v", tt.limit, got, truncated, tt.want, tt.truncated)
+		}
+	}
+
+	if runtime.GOOS != "windows" {
+		link := filepath.Join(dir, "link.txt")
+		if err := os.Symlink(path, link); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := SafeReadFileN(dir, link, 4); !errors.Is(err, ErrUnsafeFile) {
+			t.Errorf("SafeReadFileN(symlink) error = %v, want ErrUnsafeFile", err)
+		}
+	}
+}
+
+// TestSafeReadFile_TooLarge covers issue #87: a file past MaxSkillFileBytes
+// is refused rather than loaded whole. The oversized file is sparse, so the
+// test costs no disk.
+func TestSafeReadFile_TooLarge(t *testing.T) {
+	dir := t.TempDir()
+	sparse := func(name string, size int64) string {
+		path := filepath.Join(dir, name)
+		f, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Truncate(size); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	over := sparse("over.bin", MaxSkillFileBytes+1)
+	if _, err := SafeReadFile(dir, over); !errors.Is(err, ErrFileTooLarge) {
+		t.Errorf("SafeReadFile(over limit) error = %v, want ErrFileTooLarge", err)
+	}
+
+	exact := sparse("exact.bin", MaxSkillFileBytes)
+	got, err := SafeReadFile(dir, exact)
+	if err != nil {
+		t.Fatalf("SafeReadFile(at limit): %v", err)
+	}
+	if int64(len(got)) != MaxSkillFileBytes {
+		t.Errorf("SafeReadFile(at limit) len = %d, want %d", len(got), MaxSkillFileBytes)
+	}
+}
+
+func TestFormatByteSize(t *testing.T) {
+	for _, tt := range []struct {
+		n    int64
+		want string
+	}{
+		{8 << 20, "8 MiB"},
+		{64 << 10, "64 KiB"},
+		{100, "100 bytes"},
+		{(8 << 20) + 1, "8388609 bytes"},
+	} {
+		if got := FormatByteSize(tt.n); got != tt.want {
+			t.Errorf("FormatByteSize(%d) = %q, want %q", tt.n, got, tt.want)
+		}
+	}
+}

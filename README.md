@@ -703,6 +703,7 @@ These checks validate conformance with the [Agent Skills specification](https://
 
 - **Structure**: `SKILL.md` exists; only recognized directories (`scripts/`, `references/`, `assets/`); no deep nesting; no orphan files
 - **Frontmatter**: required fields (`name`, `description`) are present and valid; `name` is lowercase alphanumeric with hyphens (1-64 chars) and matches the directory name; optional fields (`license`, `compatibility`, `metadata`, `allowed-tools`) conform to expected types and lengths; unrecognized fields are flagged
+- **Read limit**: no single file is read past 8 MiB, so a pathological file cannot exhaust memory. A larger file's token count covers only its first 8 MiB and is flagged as such; the unclosed-fence and orphan checks skip it with a warning, since they need the whole file to be right
 
 **Extraneous file detection**
 - Files like `README.md`, `CHANGELOG.md`, and `LICENSE` are flagged at the skill root -- these are for human readers, not agents, and may be loaded into the context window unnecessarily

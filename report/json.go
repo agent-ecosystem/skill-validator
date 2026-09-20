@@ -42,8 +42,9 @@ type jsonTokenCounts struct {
 }
 
 type jsonTokenCount struct {
-	File   string `json:"file"`
-	Tokens int    `json:"tokens"`
+	File      string `json:"file"`
+	Tokens    int    `json:"tokens"`
+	Truncated bool   `json:"truncated,omitempty"`
 }
 
 type jsonMultiReport struct {
@@ -77,7 +78,7 @@ func buildJSONReport(r *types.Report, perFile bool) jsonReport {
 			Files: make([]jsonTokenCount, len(r.TokenCounts)),
 		}
 		for i, c := range r.TokenCounts {
-			tc.Files[i] = jsonTokenCount{File: c.File, Tokens: c.Tokens}
+			tc.Files[i] = jsonTokenCount{File: c.File, Tokens: c.Tokens, Truncated: c.Truncated}
 			tc.Total += c.Tokens
 		}
 		out.TokenCounts = tc
@@ -88,7 +89,7 @@ func buildJSONReport(r *types.Report, perFile bool) jsonReport {
 			Files: make([]jsonTokenCount, len(r.OtherTokenCounts)),
 		}
 		for i, c := range r.OtherTokenCounts {
-			otc.Files[i] = jsonTokenCount{File: c.File, Tokens: c.Tokens}
+			otc.Files[i] = jsonTokenCount{File: c.File, Tokens: c.Tokens, Truncated: c.Truncated}
 			otc.Total += c.Tokens
 		}
 		out.OtherTokenCounts = otc

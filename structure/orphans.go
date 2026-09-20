@@ -1,6 +1,7 @@
 package structure
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -60,6 +61,7 @@ func CheckOrphanFiles(dir, body string, opts Options) []types.Result {
 	missingExtension := make(map[string]bool) // relPath → true if matched only without file extension
 	scannedRootFiles := make(map[string]bool)
 	scannedInitFiles := make(map[string]bool)
+	unscanned := make(map[string]bool) // relPath → true if too large to scan for references
 
 	// Seed the queue with the SKILL.md body.
 	queue := []queueItem{{text: body, source: "SKILL.md"}}
@@ -89,6 +91,8 @@ func CheckOrphanFiles(dir, body string, opts Options) []types.Result {
 				data, err := util.SafeReadFile(dir, filepath.Join(dir, rf))
 				if err == nil {
 					queue = append(queue, queueItem{text: string(data), source: rf})
+				} else if errors.Is(err, util.ErrFileTooLarge) {
+					unscanned[rf] = true
 				}
 			}
 		}
@@ -100,14 +104,14 @@ func CheckOrphanFiles(dir, body string, opts Options) []types.Result {
 				continue
 			}
 			if containsReference(item.text, sourceDir, relPath) {
-				markReached(relPath, item.source, dir, &queue, reached, reachedFrom)
+				markReached(relPath, item.source, dir, &queue, reached, reachedFrom, unscanned)
 			} else if isPython && pythonImportReaches(item.text, item.source, relPath) {
 				// Python import resolution takes priority over the extensionless
 				// fallback so that normal import statements (e.g., "from helpers
 				// import merge") don't trigger a "missing extension" warning.
-				markReached(relPath, item.source, dir, &queue, reached, reachedFrom)
+				markReached(relPath, item.source, dir, &queue, reached, reachedFrom, unscanned)
 			} else if containsReferenceWithoutExtension(item.text, sourceDir, relPath) {
-				markReached(relPath, item.source, dir, &queue, reached, reachedFrom)
+				markReached(relPath, item.source, dir, &queue, reached, reachedFrom, unscanned)
 				missingExtension[relPath] = true
 			}
 		}
@@ -126,9 +130,18 @@ func CheckOrphanFiles(dir, body string, opts Options) []types.Result {
 				data, err := util.SafeReadFile(dir, filepath.Join(dir, initPath))
 				if err == nil {
 					queue = append(queue, queueItem{text: string(data), source: initPath})
+				} else if errors.Is(err, util.ErrFileTooLarge) {
+					unscanned[initPath] = true
 				}
 			}
 		}
+	}
+
+	// Files too large to scan cannot vouch for anything they link to, so
+	// say so before any orphan warnings those links would have prevented.
+	for _, relPath := range util.SortedKeys(unscanned) {
+		results = append(results, ctx.WarnFile(relPath,
+			fmt.Sprintf("%s is larger than %s and was not scanned for references — files it links to may be reported as unreferenced", relPath, util.FormatByteSize(util.MaxSkillFileBytes))))
 	}
 
 	// Build results per directory.
@@ -303,7 +316,7 @@ func isPathWordByte(b byte) bool {
 
 // markReached marks a file as reached, reads it if it's a text file, and
 // enqueues its content for further BFS scanning.
-func markReached(relPath, source, dir string, queue *[]queueItem, reached map[string]bool, reachedFrom map[string]string) {
+func markReached(relPath, source, dir string, queue *[]queueItem, reached map[string]bool, reachedFrom map[string]string, unscanned map[string]bool) {
 	reached[relPath] = true
 	reachedFrom[relPath] = source
 
@@ -311,6 +324,8 @@ func markReached(relPath, source, dir string, queue *[]queueItem, reached map[st
 		data, err := util.SafeReadFile(dir, filepath.Join(dir, relPath))
 		if err == nil {
 			*queue = append(*queue, queueItem{text: string(data), source: relPath})
+		} else if errors.Is(err, util.ErrFileTooLarge) {
+			unscanned[relPath] = true
 		}
 	}
 }

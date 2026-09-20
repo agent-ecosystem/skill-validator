@@ -1,6 +1,7 @@
 package structure
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,11 +40,16 @@ func CheckMarkdown(dir, body string) []types.Result {
 		if !strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
 			continue
 		}
+		relPath := "references/" + entry.Name()
 		data, err := util.SafeReadFile(dir, filepath.Join(refsDir, entry.Name()))
+		if errors.Is(err, util.ErrFileTooLarge) {
+			results = append(results, ctx.WarnFilef(relPath,
+				"%s is larger than %s; skipped the unclosed code fence check", relPath, util.FormatByteSize(util.MaxSkillFileBytes)))
+			continue
+		}
 		if err != nil {
 			continue
 		}
-		relPath := "references/" + entry.Name()
 		if line, ok := FindUnclosedFence(string(data)); ok {
 			results = append(results, ctx.ErrorAtLinef(relPath, line,
 				"%s has an unclosed code fence starting at line %d — this may cause agents to misinterpret everything after it as code", relPath, line))

@@ -12,17 +12,29 @@ import (
 	"github.com/agent-ecosystem/skill-validator/util"
 )
 
-const maxTokenizedFileBytes = 8 * 1024 * 1024
+// maxTokenizedFileBytes bounds how much of any one file is read for token
+// counting. Larger files are counted on this prefix only and flagged as
+// truncated. A variable so tests can lower it.
+var maxTokenizedFileBytes = util.MaxSkillFileBytes
 
-func readFileWithCap(root, path string) ([]byte, error) {
-	data, err := util.SafeReadFile(root, path)
-	if err != nil {
-		return nil, err
+// readFileWithCap reads at most maxTokenizedFileBytes of path, never loading
+// the rest into memory (issue #87). truncated reports whether the file had
+// more.
+func readFileWithCap(root, path string) (data []byte, truncated bool, err error) {
+	return util.SafeReadFileN(root, path, maxTokenizedFileBytes)
+}
+
+// truncationNotes flags every count that covers only a prefix of its file.
+func truncationNotes(ctx types.ResultContext, counts []types.TokenCount) []types.Result {
+	var results []types.Result
+	for _, tc := range counts {
+		if tc.Truncated {
+			limit := util.FormatByteSize(maxTokenizedFileBytes)
+			results = append(results, ctx.WarnFilef(tc.File,
+				"%s is larger than %s; its token count covers only the first %s", tc.File, limit, limit))
+		}
 	}
-	if len(data) > maxTokenizedFileBytes {
-		data = data[:maxTokenizedFileBytes]
-	}
-	return data, nil
+	return results
 }
 
 const (
@@ -99,7 +111,7 @@ func CheckTokens(dir, body string, opts Options) ([]types.Result, []types.TokenC
 				continue
 			}
 			path := filepath.Join(refsDir, entry.Name())
-			data, err := readFileWithCap(dir, path)
+			data, truncated, err := readFileWithCap(dir, path)
 			if err != nil {
 				relPath := "references/" + entry.Name()
 				results = append(results, ctx.WarnFilef(relPath, "could not read %s: %v", relPath, err))
@@ -109,8 +121,9 @@ func CheckTokens(dir, body string, opts Options) ([]types.Result, []types.TokenC
 			fileTokens := len(tokens)
 			relPath := "references/" + entry.Name()
 			counts = append(counts, types.TokenCount{
-				File:   relPath,
-				Tokens: fileTokens,
+				File:      relPath,
+				Tokens:    fileTokens,
+				Truncated: truncated,
 			})
 			refTotal += fileTokens
 
@@ -203,6 +216,9 @@ func CheckTokens(dir, body string, opts Options) ([]types.Result, []types.TokenC
 	assetCounts := countAssetFiles(dir, enc)
 	counts = append(counts, assetCounts...)
 
+	results = append(results, truncationNotes(ctx, counts)...)
+	results = append(results, truncationNotes(ctx, otherCounts)...)
+
 	return results, counts, otherCounts
 }
 
@@ -270,13 +286,13 @@ func countAssetFiles(dir string, enc tokenizer.Codec) []types.TokenCount {
 		if !textAssetExtensions[ext] {
 			return nil
 		}
-		data, err := readFileWithCap(dir, path)
+		data, truncated, err := readFileWithCap(dir, path)
 		if err != nil {
 			return nil
 		}
 		rel, _ := filepath.Rel(dir, path)
 		tokens, _, _ := enc.Encode(string(data))
-		counts = append(counts, types.TokenCount{File: filepath.ToSlash(rel), Tokens: len(tokens)})
+		counts = append(counts, types.TokenCount{File: filepath.ToSlash(rel), Tokens: len(tokens), Truncated: truncated})
 		return nil
 	})
 
@@ -353,12 +369,12 @@ func countOtherFiles(dir string, enc tokenizer.Codec, opts Options, exclusions *
 			if binaryExtensions[strings.ToLower(filepath.Ext(name))] {
 				continue
 			}
-			data, err := readFileWithCap(dir, filepath.Join(dir, name))
+			data, truncated, err := readFileWithCap(dir, filepath.Join(dir, name))
 			if err != nil {
 				continue
 			}
 			tokens, _, _ := enc.Encode(string(data))
-			counts = append(counts, types.TokenCount{File: name, Tokens: len(tokens)})
+			counts = append(counts, types.TokenCount{File: name, Tokens: len(tokens), Truncated: truncated})
 		}
 	}
 
@@ -398,12 +414,12 @@ func countFilesInDir(rootDir, dirName string, enc tokenizer.Codec, exclusions *t
 		if binaryExtensions[strings.ToLower(filepath.Ext(info.Name()))] {
 			return nil
 		}
-		data, err := readFileWithCap(rootDir, path)
+		data, truncated, err := readFileWithCap(rootDir, path)
 		if err != nil {
 			return nil
 		}
 		tokens, _, _ := enc.Encode(string(data))
-		counts = append(counts, types.TokenCount{File: filepath.ToSlash(rel), Tokens: len(tokens)})
+		counts = append(counts, types.TokenCount{File: filepath.ToSlash(rel), Tokens: len(tokens), Truncated: truncated})
 		return nil
 	})
 
@@ -432,12 +448,12 @@ func countRootFiles(dir string, enc tokenizer.Codec) []types.TokenCount {
 		if binaryExtensions[strings.ToLower(filepath.Ext(name))] {
 			continue
 		}
-		data, err := readFileWithCap(dir, filepath.Join(dir, name))
+		data, truncated, err := readFileWithCap(dir, filepath.Join(dir, name))
 		if err != nil {
 			continue
 		}
 		tokens, _, _ := enc.Encode(string(data))
-		counts = append(counts, types.TokenCount{File: name, Tokens: len(tokens)})
+		counts = append(counts, types.TokenCount{File: name, Tokens: len(tokens), Truncated: truncated})
 	}
 	return counts
 }
