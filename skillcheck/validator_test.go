@@ -549,6 +549,21 @@ func TestDiscoverSkills_Symlinks(t *testing.T) {
 		}
 	})
 
+	t.Run("alias is reported once from a relative root", func(t *testing.T) {
+		// With a relative root, ordinary children resolve to relative paths
+		// while a link to an absolute target resolves to an absolute one.
+		// Identity keys must not depend on that, or the alias is counted as
+		// a second skill. Reported paths stay relative, as given.
+		base := t.TempDir()
+		writeSkill(t, filepath.Join(base, "catalog", "real"), "---\nname: s\n---\n")
+		mustSymlink(t, filepath.Join(base, "catalog", "real"), filepath.Join(base, "catalog", "alias"))
+		t.Chdir(base)
+		d := DiscoverSkills("catalog", DefaultMaxDepth)
+		if want := []string{filepath.Join("catalog", "alias")}; !reflect.DeepEqual(d.Dirs, want) {
+			t.Errorf("dirs = %v, want %v", d.Dirs, want)
+		}
+	})
+
 	t.Run("follows link to a skill outside root", func(t *testing.T) {
 		// A skills directory assembled from links to skill folders kept
 		// elsewhere is a supported layout.

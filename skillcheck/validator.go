@@ -103,12 +103,20 @@ func discoverSkills(root string, maxDepth, maxDirs int) Discovery {
 	// listed, and the budget is spent on listings, not on skills.
 	type dirItem struct {
 		path  string // path as reached from root, reported to the caller
-		real  string // symlink-resolved path, used to visit each directory once
+		real  string // absolute, symlink-resolved path, used to visit each directory once
 		depth int
 	}
 
+	// Identity keys must be absolute: a relative root would otherwise give
+	// relative keys to ordinary children while a link to an absolute target
+	// resolves to an absolute key, and the same directory would be visited
+	// twice. Caller-facing paths are left as given.
 	visited := make(map[string]bool)
-	realRoot, err := filepath.EvalSymlinks(root)
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return Discovery{Mode: types.NoSkill}
+	}
+	realRoot, err := filepath.EvalSymlinks(absRoot)
 	if err != nil {
 		return Discovery{Mode: types.NoSkill}
 	}
@@ -146,7 +154,8 @@ func discoverSkills(root string, maxDepth, maxDirs int) Discovery {
 				real = filepath.Join(cur.real, name)
 			case entry.Type()&os.ModeSymlink != 0:
 				// Follow the link, but only into a directory that exists.
-				resolved, err := filepath.EvalSymlinks(sub)
+				// Resolving through cur.real keeps the key absolute.
+				resolved, err := filepath.EvalSymlinks(filepath.Join(cur.real, name))
 				if err != nil {
 					continue
 				}
