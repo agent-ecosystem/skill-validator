@@ -312,3 +312,42 @@ func TestExcludeTokenPathsOutputFormats(t *testing.T) {
 		})
 	}
 }
+
+// Issue #77: skills under intermediate directories are found by default,
+// and --max-depth bounds the search.
+func TestMaxDepth(t *testing.T) {
+	bin := buildBinary(t)
+	root := t.TempDir()
+	skillDir := filepath.Join(root, "product", "skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skill := "---\nname: skill\ndescription: Nested two levels down.\n---\n# Skill\n\nDo the thing.\n"
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skill), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name     string
+		args     []string
+		wantCode int
+		want     string
+	}{
+		{"default finds depth 2", []string{"validate", "structure", "-o", "json", root}, 0, `"skill_dir"`},
+		{"max-depth 1 does not", []string{"validate", "structure", "--max-depth=1", root}, 3, "up to 1 levels deep"},
+		{"max-depth 0 on the skill", []string{"validate", "structure", "--max-depth=0", skillDir}, 0, ""},
+		{"negative is a usage error", []string{"check", "--max-depth=-1", root}, 3, "invalid --max-depth"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := exec.Command(bin, tt.args...)
+			out, _ := cmd.CombinedOutput()
+			if got := cmd.ProcessState.ExitCode(); got != tt.wantCode {
+				t.Errorf("exit code = %d, want %d\noutput: %s", got, tt.wantCode, out)
+			}
+			if tt.want != "" && !strings.Contains(string(out), tt.want) {
+				t.Errorf("expected output to contain %q, got:\n%s", tt.want, out)
+			}
+		})
+	}
+}

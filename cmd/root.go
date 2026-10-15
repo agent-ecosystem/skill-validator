@@ -16,6 +16,7 @@ const version = "v1.6.2"
 var (
 	outputFormat    string
 	emitAnnotations bool
+	maxDepth        int
 )
 
 var rootCmd = &cobra.Command{
@@ -33,6 +34,7 @@ func init() {
 	rootCmd.Version = version
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "text", "output format: text, compact, json, or markdown")
 	rootCmd.PersistentFlags().BoolVar(&emitAnnotations, "emit-annotations", false, "emit GitHub Actions workflow command annotations (::error/::warning) alongside normal output")
+	rootCmd.PersistentFlags().IntVar(&maxDepth, "max-depth", skillcheck.DefaultMaxDepth, "how many directory levels below <path> to search for SKILL.md files (0 searches <path> only)")
 }
 
 // Execute runs the root command.
@@ -78,10 +80,17 @@ func detectAndResolve(args []string) (string, types.SkillMode, []string, error) 
 		return "", 0, nil, err
 	}
 
-	mode, dirs := skillcheck.DetectSkills(absDir)
-	if mode == types.NoSkill {
-		return "", 0, nil, fmt.Errorf("no skills found in %s (expected SKILL.md or subdirectories containing SKILL.md)", args[0])
+	if maxDepth < 0 {
+		return "", 0, nil, fmt.Errorf("invalid --max-depth: %d is negative", maxDepth)
 	}
 
-	return absDir, mode, dirs, nil
+	d := skillcheck.DiscoverSkills(absDir, maxDepth)
+	if d.Truncated {
+		fmt.Fprintf(os.Stderr, "Warning: skill discovery stopped after listing %d directories under %s; skills below that point were not found\n", skillcheck.MaxDiscoveryDirs, args[0])
+	}
+	if d.Mode == types.NoSkill {
+		return "", 0, nil, fmt.Errorf("no skills found in %s (expected SKILL.md in the directory or in a subdirectory up to %d levels deep)", args[0], maxDepth)
+	}
+
+	return absDir, d.Mode, d.Dirs, nil
 }

@@ -1,8 +1,10 @@
 package skillcheck
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -357,6 +359,256 @@ func TestDetectSkills(t *testing.T) {
 		}
 		if len(dirs) != 1 {
 			t.Fatalf("expected 1 dir, got %d", len(dirs))
+		}
+	})
+}
+
+// Issue #77: skills grouped under intermediate directories (for example
+// skills/<product>/<skill>/SKILL.md) are discovered up to a depth bound.
+func TestDiscoverSkills_Nested(t *testing.T) {
+	t.Run("two levels", func(t *testing.T) {
+		dir := t.TempDir()
+		writeSkill(t, filepath.Join(dir, "cuopt", "cuopt-developer"), "---\nname: a\n---\n")
+		writeSkill(t, filepath.Join(dir, "Megatron-Bridge", "bump-base-image"), "---\nname: b\n---\n")
+		writeSkill(t, filepath.Join(dir, "Megatron-Bridge", "update-golden-values"), "---\nname: c\n---\n")
+		d := DiscoverSkills(dir, DefaultMaxDepth)
+		if d.Mode != types.MultiSkill {
+			t.Fatalf("expected MultiSkill, got %d", d.Mode)
+		}
+		want := []string{
+			filepath.Join(dir, "Megatron-Bridge", "bump-base-image"),
+			filepath.Join(dir, "Megatron-Bridge", "update-golden-values"),
+			filepath.Join(dir, "cuopt", "cuopt-developer"),
+		}
+		if !reflect.DeepEqual(d.Dirs, want) {
+			t.Errorf("dirs = %v, want %v", d.Dirs, want)
+		}
+		if d.Truncated {
+			t.Error("unexpected truncation")
+		}
+	})
+
+	t.Run("mixed depths", func(t *testing.T) {
+		dir := t.TempDir()
+		writeSkill(t, filepath.Join(dir, "top"), "---\nname: top\n---\n")
+		writeSkill(t, filepath.Join(dir, "group", "deep"), "---\nname: deep\n---\n")
+		d := DiscoverSkills(dir, DefaultMaxDepth)
+		want := []string{filepath.Join(dir, "group", "deep"), filepath.Join(dir, "top")}
+		if !reflect.DeepEqual(d.Dirs, want) {
+			t.Errorf("dirs = %v, want %v", d.Dirs, want)
+		}
+		wantDepths := map[string]int{want[0]: 2, want[1]: 1}
+		if !reflect.DeepEqual(d.Depths, wantDepths) {
+			t.Errorf("depths = %v, want %v", d.Depths, wantDepths)
+		}
+	})
+
+	t.Run("single skill has depth 0", func(t *testing.T) {
+		dir := t.TempDir()
+		writeSkill(t, dir, "---\nname: s\n---\n")
+		d := DiscoverSkills(dir, DefaultMaxDepth)
+		if want := map[string]int{dir: 0}; !reflect.DeepEqual(d.Depths, want) {
+			t.Errorf("depths = %v, want %v", d.Depths, want)
+		}
+	})
+
+	t.Run("depth bound", func(t *testing.T) {
+		dir := t.TempDir()
+		at := func(depth int) string {
+			p := dir
+			for i := 1; i <= depth; i++ {
+				p = filepath.Join(p, fmt.Sprintf("l%d", i))
+			}
+			return p
+		}
+		writeSkill(t, at(DefaultMaxDepth), "---\nname: in\n---\n")
+		writeSkill(t, filepath.Join(at(DefaultMaxDepth-1), "other", "x"), "---\nname: out\n---\n") // depth 7
+		d := DiscoverSkills(dir, DefaultMaxDepth)
+		if want := []string{at(DefaultMaxDepth)}; !reflect.DeepEqual(d.Dirs, want) {
+			t.Errorf("dirs = %v, want %v", d.Dirs, want)
+		}
+		if d.Truncated {
+			t.Error("a depth cutoff is not a truncation")
+		}
+		// maxDepth 1 is the pre-#77 behavior: immediate subdirectories only.
+		if d := DiscoverSkills(dir, 1); d.Mode != types.NoSkill {
+			t.Errorf("maxDepth 1: expected NoSkill, got %d %v", d.Mode, d.Dirs)
+		}
+		// maxDepth 0 looks at the given directory only.
+		if d := DiscoverSkills(at(DefaultMaxDepth), 0); d.Mode != types.SingleSkill {
+			t.Errorf("maxDepth 0 on a skill: expected SingleSkill, got %d", d.Mode)
+		}
+		if d := DiscoverSkills(dir, 0); d.Mode != types.NoSkill {
+			t.Errorf("maxDepth 0 on a parent: expected NoSkill, got %d", d.Mode)
+		}
+	})
+
+	t.Run("does not descend into a skill", func(t *testing.T) {
+		dir := t.TempDir()
+		writeSkill(t, filepath.Join(dir, "skill"), "---\nname: skill\n---\n")
+		writeSkill(t, filepath.Join(dir, "skill", "examples", "nested"), "---\nname: nested\n---\n")
+		d := DiscoverSkills(dir, DefaultMaxDepth)
+		if want := []string{filepath.Join(dir, "skill")}; !reflect.DeepEqual(d.Dirs, want) {
+			t.Errorf("dirs = %v, want %v", d.Dirs, want)
+		}
+	})
+
+	t.Run("skips hidden dirs at any depth", func(t *testing.T) {
+		dir := t.TempDir()
+		writeSkill(t, filepath.Join(dir, "group", ".hidden", "skill"), "---\nname: hidden\n---\n")
+		writeSkill(t, filepath.Join(dir, "group", "shown"), "---\nname: shown\n---\n")
+		d := DiscoverSkills(dir, DefaultMaxDepth)
+		if want := []string{filepath.Join(dir, "group", "shown")}; !reflect.DeepEqual(d.Dirs, want) {
+			t.Errorf("dirs = %v, want %v", d.Dirs, want)
+		}
+	})
+
+	t.Run("skips dependency dirs", func(t *testing.T) {
+		dir := t.TempDir()
+		writeSkill(t, filepath.Join(dir, "node_modules", "pkg", "skill"), "---\nname: nm\n---\n")
+		writeSkill(t, filepath.Join(dir, "__pycache__", "skill"), "---\nname: pyc\n---\n")
+		writeSkill(t, filepath.Join(dir, "web", "node_modules", "skill"), "---\nname: nested\n---\n")
+		writeSkill(t, filepath.Join(dir, "web", "skill"), "---\nname: web\n---\n")
+		d := DiscoverSkills(dir, DefaultMaxDepth)
+		if want := []string{filepath.Join(dir, "web", "skill")}; !reflect.DeepEqual(d.Dirs, want) {
+			t.Errorf("dirs = %v, want %v", d.Dirs, want)
+		}
+	})
+
+	t.Run("directory budget", func(t *testing.T) {
+		dir := t.TempDir()
+		// 50 directories sort before the one that holds a skill at depth 2.
+		// Listing the root finds the depth-1 skill at once; the budget of
+		// 20 listings then runs out before the depth-2 skill's parent is
+		// listed, and the scan reports the truncation.
+		for i := 0; i < 50; i++ {
+			if err := os.MkdirAll(filepath.Join(dir, fmt.Sprintf("a%02d", i), "sub"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		writeSkill(t, filepath.Join(dir, "shallow"), "---\nname: shallow\n---\n")
+		writeSkill(t, filepath.Join(dir, "zgroup", "deep"), "---\nname: deep\n---\n")
+
+		d := discoverSkills(dir, DefaultMaxDepth, 20)
+		if want := []string{filepath.Join(dir, "shallow")}; !reflect.DeepEqual(d.Dirs, want) {
+			t.Errorf("dirs = %v, want %v", d.Dirs, want)
+		}
+		if !d.Truncated {
+			t.Error("expected Truncated when the budget runs out with directories left")
+		}
+
+		// With budget for the whole tree, nothing is truncated.
+		d = discoverSkills(dir, DefaultMaxDepth, MaxDiscoveryDirs)
+		if len(d.Dirs) != 2 || d.Truncated {
+			t.Errorf("dirs = %v truncated = %v, want 2 dirs and no truncation", d.Dirs, d.Truncated)
+		}
+	})
+}
+
+func TestDiscoverSkills_Symlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks require admin on Windows")
+	}
+	mustSymlink := func(t *testing.T, target, link string) {
+		t.Helper()
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("cycle to root", func(t *testing.T) {
+		dir := t.TempDir()
+		writeSkill(t, filepath.Join(dir, "team", "skill"), "---\nname: s\n---\n")
+		mustSymlink(t, dir, filepath.Join(dir, "loop"))
+		d := DiscoverSkills(dir, DefaultMaxDepth)
+		if want := []string{filepath.Join(dir, "team", "skill")}; !reflect.DeepEqual(d.Dirs, want) {
+			t.Errorf("dirs = %v, want %v", d.Dirs, want)
+		}
+		if d.Truncated {
+			t.Error("a cycle must not consume the directory budget")
+		}
+	})
+
+	t.Run("cycle to parent", func(t *testing.T) {
+		dir := t.TempDir()
+		writeSkill(t, filepath.Join(dir, "team", "skill"), "---\nname: s\n---\n")
+		mustSymlink(t, "..", filepath.Join(dir, "team", "up"))
+		d := DiscoverSkills(dir, DefaultMaxDepth)
+		if want := []string{filepath.Join(dir, "team", "skill")}; !reflect.DeepEqual(d.Dirs, want) {
+			t.Errorf("dirs = %v, want %v", d.Dirs, want)
+		}
+	})
+
+	t.Run("alias of a skill is reported once", func(t *testing.T) {
+		dir := t.TempDir()
+		writeSkill(t, filepath.Join(dir, "real"), "---\nname: s\n---\n")
+		mustSymlink(t, filepath.Join(dir, "real"), filepath.Join(dir, "alias"))
+		d := DiscoverSkills(dir, DefaultMaxDepth)
+		if len(d.Dirs) != 1 {
+			t.Errorf("dirs = %v, want exactly one", d.Dirs)
+		}
+	})
+
+	t.Run("alias is reported once from a relative root", func(t *testing.T) {
+		// With a relative root, ordinary children resolve to relative paths
+		// while a link to an absolute target resolves to an absolute one.
+		// Identity keys must not depend on that, or the alias is counted as
+		// a second skill. Reported paths stay relative, as given.
+		base := t.TempDir()
+		writeSkill(t, filepath.Join(base, "catalog", "real"), "---\nname: s\n---\n")
+		mustSymlink(t, filepath.Join(base, "catalog", "real"), filepath.Join(base, "catalog", "alias"))
+		t.Chdir(base)
+		d := DiscoverSkills("catalog", DefaultMaxDepth)
+		if want := []string{filepath.Join("catalog", "alias")}; !reflect.DeepEqual(d.Dirs, want) {
+			t.Errorf("dirs = %v, want %v", d.Dirs, want)
+		}
+	})
+
+	t.Run("follows link to a skill outside root", func(t *testing.T) {
+		// A skills directory assembled from links to skill folders kept
+		// elsewhere is a supported layout.
+		outside := t.TempDir()
+		writeSkill(t, filepath.Join(outside, "shared"), "---\nname: shared\n---\n")
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, "team"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		mustSymlink(t, filepath.Join(outside, "shared"), filepath.Join(dir, "team", "shared"))
+		d := DiscoverSkills(dir, DefaultMaxDepth)
+		if want := []string{filepath.Join(dir, "team", "shared")}; !reflect.DeepEqual(d.Dirs, want) {
+			t.Errorf("dirs = %v, want %v", d.Dirs, want)
+		}
+	})
+
+	t.Run("broken link and link to file are ignored", func(t *testing.T) {
+		dir := t.TempDir()
+		writeSkill(t, filepath.Join(dir, "skill"), "---\nname: s\n---\n")
+		mustSymlink(t, filepath.Join(dir, "missing"), filepath.Join(dir, "dangling"))
+		mustSymlink(t, filepath.Join(dir, "skill", "SKILL.md"), filepath.Join(dir, "filelink"))
+		d := DiscoverSkills(dir, DefaultMaxDepth)
+		if want := []string{filepath.Join(dir, "skill")}; !reflect.DeepEqual(d.Dirs, want) {
+			t.Errorf("dirs = %v, want %v", d.Dirs, want)
+		}
+	})
+
+	t.Run("linked large tree cannot starve a sibling skill", func(t *testing.T) {
+		big := t.TempDir()
+		for i := 0; i < 30; i++ {
+			if err := os.MkdirAll(filepath.Join(big, fmt.Sprintf("d%02d", i), "x", "y"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		dir := t.TempDir()
+		// "aaa-link" sorts before "team", so a depth-first scan would spend
+		// its budget inside the linked tree and report no skills.
+		mustSymlink(t, big, filepath.Join(dir, "aaa-link"))
+		writeSkill(t, filepath.Join(dir, "team", "skill"), "---\nname: s\n---\n")
+		d := discoverSkills(dir, DefaultMaxDepth, 40)
+		if want := []string{filepath.Join(dir, "team", "skill")}; !reflect.DeepEqual(d.Dirs, want) {
+			t.Errorf("dirs = %v, want %v", d.Dirs, want)
+		}
+		if !d.Truncated {
+			t.Error("expected Truncated")
 		}
 	})
 }

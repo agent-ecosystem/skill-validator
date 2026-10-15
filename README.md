@@ -448,6 +448,8 @@ The `--compare` flag is useful for understanding how different models perceive y
 
 All commands accept `-o text` (default), `-o compact`, `-o json`, or `-o markdown` for output format. Use `--emit-annotations` with any format to emit GitHub Actions workflow annotations alongside normal output.
 
+All commands that take a path also accept `--max-depth=N` to control how many directory levels below the path are searched for skills (see [Multi-skill directories](#multi-skill-directories)).
+
 ### Compact output
 
 The default text output prints every passing check, token counts, and the
@@ -658,11 +660,19 @@ For in-progress skills where you want warnings to be non-blocking, remove `--str
 
 ### Multi-skill directories
 
-If the given path does not contain a `SKILL.md` but has subdirectories that do, the validator automatically detects and validates each skill. This is useful when skills are organized as sibling directories (e.g. `skills/algorithmic-art/`, `skills/brand-guidelines/`). Symlinks are followed during detection.
+If the given path does not contain a `SKILL.md`, the validator searches its subdirectories for skills and validates each one. This covers skills organized as sibling directories (e.g. `skills/algorithmic-art/`, `skills/brand-guidelines/`) and skills grouped under intermediate directories (e.g. `skills/<product>/<skill>/`), so one invocation can cover a whole catalog:
 
 ```
 skill-validator check skills/
 ```
+
+Only the given path is searched. The [agentskills.io implementation guide](https://agentskills.io/client-implementation/adding-skills-support.md) describes how an agent discovers skills at session start, by scanning fixed locations such as `~/.agents/skills/` and `<project>/.agents/skills/`. A validator has no reason to look anywhere but where it is pointed, so skill-validator never scans the home directory or any other conventional location. What it does take from the guide is its scanning rules:
+
+- Subdirectories are searched up to 6 levels deep by default. Use `--max-depth=N` to change this; `--max-depth=1` searches only the immediate subdirectories, and `--max-depth=0` treats the given path as a single skill and nothing else.
+- A directory that contains a `SKILL.md` is a skill, and nothing below it is searched, so a `SKILL.md` inside a skill's examples or references does not count as a second skill.
+- Hidden directories (names starting with `.`, which covers `.git/`) and dependency directories (`node_modules/`, `__pycache__/`) are skipped. `.gitignore` is not consulted: honoring it would mean locating the repository root and evaluating nested ignore rules, and the directory budget already bounds the cost of scanning build output.
+- Symlinks are followed, so a skills directory assembled from links to skill folders kept elsewhere works. Each real directory is examined once, which makes symlink cycles harmless and keeps a skill from being reported twice under two paths.
+- At most 2000 directories are listed. A skill is found as soon as its parent directory is listed, and the search is breadth-first, so shallow skills are found before a large subtree can use up that budget. If the limit is reached, a warning on stderr says that skills below that point were not found.
 
 Each skill is validated independently. The text output separates skills with a line and appends an overall summary. The JSON output wraps individual skill reports in a `skills` array:
 
@@ -678,7 +688,7 @@ Each skill is validated independently. The text output separates skills with a l
 }
 ```
 
-If no `SKILL.md` is found at the root or in any immediate subdirectory, the validator exits with code 3 (CLI error).
+If no `SKILL.md` is found at the root or within the search depth, the validator exits with code 3 (CLI error).
 
 ## Examples
 
