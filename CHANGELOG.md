@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0]
+
+### Added
+
+- Skills under grouping directories are discovered ([#77]). `check
+  skills/` now finds `skills/<product>/<skill>/SKILL.md`, searching up to
+  6 levels deep as the agentskills.io client implementation guide
+  recommends, so a whole catalog is validated in one invocation. The
+  search is breadth-first and visits each real directory once, so symlink
+  cycles and aliases are harmless and a linked skill is reported under one
+  path. A directory holding a `SKILL.md` is a skill and is not searched
+  further, so a nested `SKILL.md` inside a skill's examples or references
+  is not a second skill. Hidden directories, `node_modules`, and
+  `__pycache__` are skipped. At most 2000 directories are listed, with a
+  warning on stderr if that limit is hit. Only the given path is searched:
+  the home directory and the `.agents/skills` conventions are an agent's
+  concern, not a validator's.
+- `--max-depth` flag on every command. `--max-depth=1` restores the
+  previous immediate-subdirectory behavior; `--max-depth=0` treats the
+  given path as a single skill and nothing else.
+- `skillcheck.DiscoverSkills(root, maxDepth)` returns a `Discovery` with
+  the mode, the sorted skill directories, each one's depth below the root,
+  and a `Truncated` flag. `DetectSkills` keeps its signature and calls it
+  with the default depth.
+
 ## [1.6.2]
 
 ### Fixed
@@ -281,6 +306,7 @@ First stable release. Includes the complete CLI and importable library packages.
 - `types` — shared data types (`Report`, `Result`, `Level`, etc.)
 - `judge.LLMClient` interface for custom LLM providers
 
+[1.7.0]: https://github.com/agent-ecosystem/skill-validator/compare/v1.6.2...v1.7.0
 [1.6.2]: https://github.com/agent-ecosystem/skill-validator/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/agent-ecosystem/skill-validator/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/agent-ecosystem/skill-validator/compare/v1.5.6...v1.6.0
@@ -313,6 +339,7 @@ First stable release. Includes the complete CLI and importable library packages.
 [#63]: https://github.com/agent-ecosystem/skill-validator/issues/63
 [#70]: https://github.com/agent-ecosystem/skill-validator/issues/70
 [#71]: https://github.com/agent-ecosystem/skill-validator/issues/71
+[#77]: https://github.com/agent-ecosystem/skill-validator/issues/77
 [#78]: https://github.com/agent-ecosystem/skill-validator/pull/78
 [#79]: https://github.com/agent-ecosystem/skill-validator/pull/79
 [#81]: https://github.com/agent-ecosystem/skill-validator/issues/81
