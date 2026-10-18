@@ -73,6 +73,20 @@ func TestDiscoverSkills_Junctions(t *testing.T) {
 		}
 	})
 
+	t.Run("symlink to a skill behind a junction", func(t *testing.T) {
+		source := t.TempDir()
+		writeSkill(t, filepath.Join(source, "skill"), "---\nname: s\n---\n")
+		junction := filepath.Join(t.TempDir(), "junction")
+		testutil.Junction(t, source, junction)
+		dir := t.TempDir()
+		testutil.Symlink(t, filepath.Join(junction, "skill"), filepath.Join(dir, "alias"))
+
+		d := DiscoverSkills(dir, DefaultMaxDepth)
+		if want := []string{filepath.Join(dir, "alias")}; !reflect.DeepEqual(d.Dirs, want) {
+			t.Errorf("dirs = %v, want %v", d.Dirs, want)
+		}
+	})
+
 	t.Run("dangling junction is ignored", func(t *testing.T) {
 		dir := t.TempDir()
 		writeSkill(t, filepath.Join(dir, "skill"), "---\nname: s\n---\n")

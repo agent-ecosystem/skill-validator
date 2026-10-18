@@ -85,3 +85,65 @@ func TestSafeReadFile_JunctionEscapesRoot(t *testing.T) {
 		t.Errorf("SafeReadFile through escaping junction error = %v, want ErrUnsafeFile", err)
 	}
 }
+
+// Links of both kinds can chain: a symlink may lead into a junction and a
+// junction may lead to a symlink. Each element is resolved in turn.
+func TestRealPath_MixedLinkChains(t *testing.T) {
+	source := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(source, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "sub", "file.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.EvalSymlinks(filepath.Join(source, "sub", "file.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := t.TempDir()
+	junction := filepath.Join(base, "junction")
+	testutil.Junction(t, source, junction)
+
+	check := func(t *testing.T, path string) {
+		t.Helper()
+		got, err := RealPath(path)
+		if err != nil {
+			t.Fatalf("RealPath(%s): %v", path, err)
+		}
+		if got != want {
+			t.Errorf("RealPath(%s) = %q, want %q", path, got, want)
+		}
+	}
+
+	t.Run("symlink into a junction", func(t *testing.T) {
+		link := filepath.Join(base, "via-symlink")
+		testutil.Symlink(t, filepath.Join(junction, "sub"), link)
+		check(t, filepath.Join(link, "file.txt"))
+	})
+
+	t.Run("relative symlink into a junction", func(t *testing.T) {
+		link := filepath.Join(base, "via-relative")
+		testutil.Symlink(t, filepath.Join("junction", "sub"), link)
+		check(t, filepath.Join(link, "file.txt"))
+	})
+
+	t.Run("junction to a symlink", func(t *testing.T) {
+		link := filepath.Join(base, "symlinked-source")
+		testutil.Symlink(t, source, link)
+		second := filepath.Join(base, "junction-to-symlink")
+		testutil.Junction(t, link, second)
+		check(t, filepath.Join(second, "sub", "file.txt"))
+	})
+
+	t.Run("reads through a symlink into a junction", func(t *testing.T) {
+		root := filepath.Join(base, "skill-alias")
+		testutil.Symlink(t, filepath.Join(junction, "sub"), root)
+		got, err := SafeReadFile(root, filepath.Join(root, "file.txt"))
+		if err != nil {
+			t.Fatalf("SafeReadFile: %v", err)
+		}
+		if string(got) != "x" {
+			t.Errorf("SafeReadFile = %q, want %q", got, "x")
+		}
+	})
+}
