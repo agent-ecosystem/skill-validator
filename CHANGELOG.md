@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0]
+
+### Added
+
+- Windows binaries ship with each release, for amd64 and arm64, as `.zip`
+  archives ([#105]). The install section documents the release archives
+  for every platform.
+- `--max-response-tokens` on `score evaluate` sets the response budget
+  of each judge call. The default is 8192 tokens; it was a fixed 500.
+  Reasoning models (OpenAI o-series and gpt-5, GLM, Kimi, DeepSeek)
+  think inside the same budget before they answer, so the old cap left
+  them no room and scoring failed with an empty "no valid JSON object
+  found" error ([#103], thanks [@showharLaw]). Library callers set it
+  with `judge.ClientOptions.MaxResponseTokens`, defaulting to
+  `judge.DefaultMaxResponseTokens`. The HTTP timeout for judge calls is
+  3 minutes, up from 30 seconds, to match.
+- `judge.ErrEmptyResponse` is returned when a judge call succeeds without
+  answer text. When the stop reason, visible reasoning, Anthropic
+  thinking blocks, or OpenAI's reasoning token count shows the budget
+  was spent thinking, the message names the budget and the flag.
+- `util.RealPath` resolves symlinks and, on Windows, directory junctions,
+  in whatever order they chain.
+
+### Changed
+
+- The `claude-cli` provider sends the content on stdin and the system
+  prompt through a temporary `--system-prompt-file`, not as command-line
+  arguments ([#103]). The judge prompt alone is about 24 KB, which put
+  every call at or over the Windows command-line limit. Requires Claude
+  Code 1.0.55 or later.
+
+### Fixed
+
+- Skills reached through Windows directory junctions are discovered and
+  validated ([#101], thanks [@showharLaw]). Go reports a junction as
+  neither a directory nor a symlink, so a catalog of junctions, a common
+  Windows layout, was silently reduced to its few real directories, and
+  the files of a junctioned skill could not be read. Junctions are now
+  followed like symlinks during discovery and resolved by file reads and
+  internal-link checks, and a junction inside a skill that leads outside
+  it is refused, as a symlinked directory already was.
+
 ## [1.7.0]
 
 ### Added
@@ -306,6 +348,7 @@ First stable release. Includes the complete CLI and importable library packages.
 - `types` — shared data types (`Report`, `Result`, `Level`, etc.)
 - `judge.LLMClient` interface for custom LLM providers
 
+[1.8.0]: https://github.com/agent-ecosystem/skill-validator/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/agent-ecosystem/skill-validator/compare/v1.6.2...v1.7.0
 [1.6.2]: https://github.com/agent-ecosystem/skill-validator/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/agent-ecosystem/skill-validator/compare/v1.6.0...v1.6.1
@@ -355,7 +398,11 @@ First stable release. Includes the complete CLI and importable library packages.
 [#91]: https://github.com/agent-ecosystem/skill-validator/issues/91
 [#92]: https://github.com/agent-ecosystem/skill-validator/issues/92
 [#94]: https://github.com/agent-ecosystem/skill-validator/issues/94
+[#101]: https://github.com/agent-ecosystem/skill-validator/issues/101
+[#103]: https://github.com/agent-ecosystem/skill-validator/issues/103
+[#105]: https://github.com/agent-ecosystem/skill-validator/pull/105
 [@aminmesbahi]: https://github.com/aminmesbahi
 [@BoneLiu]: https://github.com/BoneLiu
 [@choplin]: https://github.com/choplin
 [@pinghe]: https://github.com/pinghe
+[@showharLaw]: https://github.com/showharLaw

@@ -13,6 +13,7 @@ Spec compliance is table stakes. `skill-validator` goes further: it checks that 
   - [CLI](#install-cli)
     - [Homebrew](#homebrew)
     - [Using Go](#using-go)
+    - [Pre-built binaries](#pre-built-binaries)
     - [Pre-commit hook](#pre-commit-hook)
   - [As a library](#as-a-library)
 - [Command Usage](#command-usage)
