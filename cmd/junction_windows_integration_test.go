@@ -3,6 +3,7 @@
 package cmd_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -14,8 +15,9 @@ import (
 	"github.com/agent-ecosystem/skill-validator/internal/testutil"
 )
 
-// copyTree copies the regular files under src to dst.
-func copyTree(t *testing.T, src, dst string) {
+// copySkill copies the skill fixture at src to dst and renames it after its
+// new directory, since a skill's name must match the directory it lives in.
+func copySkill(t *testing.T, src, dst string) {
 	t.Helper()
 	err := filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -32,6 +34,9 @@ func copyTree(t *testing.T, src, dst string) {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return err
+		}
+		if rel == "SKILL.md" {
+			data = bytes.Replace(data, []byte("name: "+filepath.Base(src)), []byte("name: "+filepath.Base(dst)), 1)
 		}
 		return os.WriteFile(target, data, 0o644)
 	})
@@ -51,10 +56,10 @@ func TestCheckJunctionedCatalog(t *testing.T) {
 	catalog := t.TempDir()
 	names := []string{"alpha", "beta", "gamma"}
 	for _, name := range names {
-		copyTree(t, valid, filepath.Join(source, name))
+		copySkill(t, valid, filepath.Join(source, name))
 		testutil.Junction(t, filepath.Join(source, name), filepath.Join(catalog, name))
 	}
-	copyTree(t, valid, filepath.Join(catalog, "plain"))
+	copySkill(t, valid, filepath.Join(catalog, "plain"))
 	wantSkills := len(names) + 1
 
 	out, err := exec.Command(bin, "check", "-o", "json", catalog).Output()
