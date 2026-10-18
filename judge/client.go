@@ -4,22 +4,48 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
 )
 
+// DefaultMaxResponseTokens is the response budget used when
+// ClientOptions.MaxResponseTokens is zero. The judge's JSON answer is a few
+// hundred tokens, but reasoning models (OpenAI o-series and gpt-5, GLM,
+// Kimi, DeepSeek) think inside the same budget before they answer, and a
+// budget sized for the answer alone leaves them no room to produce it.
+const DefaultMaxResponseTokens = 8192
+
+// ErrEmptyResponse reports a successful API call that carried no answer
+// text. The wrapped message says why when the response makes it clear.
+var ErrEmptyResponse = errors.New("model returned no text")
+
 // defaultHTTPClient is used for all LLM API calls. It sets a timeout so
-// that a hanging upstream doesn't block the caller indefinitely.
-var defaultHTTPClient = &http.Client{Timeout: 30 * time.Second}
+// that a hanging upstream doesn't block the caller indefinitely. Reasoning
+// models can spend minutes on a large response budget.
+var defaultHTTPClient = &http.Client{Timeout: 3 * time.Minute}
 
 // lookPath is used to locate the claude binary. It is a variable so tests
 // can substitute a stub when the real binary is not installed.
 var lookPath = exec.LookPath
+
+// runClaude executes the claude binary. It is a variable so tests can
+// capture the invocation instead of running the real CLI.
+var runClaude = func(ctx context.Context, args []string, stdin io.Reader) (stdout, stderr string, err error) {
+	cmd := exec.CommandContext(ctx, "claude", args...)
+	var out, errBuf bytes.Buffer
+	cmd.Stdin = stdin
+	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
+	err = cmd.Run()
+	return out.String(), errBuf.String(), err
+}
 
 // LLMClient is the interface for making LLM API calls.
 type LLMClient interface {
@@ -38,7 +64,7 @@ type ClientOptions struct {
 	BaseURL           string // Optional; defaults per provider
 	Model             string // Optional; defaults per provider
 	MaxTokensStyle    string // "auto", "max_tokens", or "max_completion_tokens"
-	MaxResponseTokens int    // Maximum tokens in the LLM response; 0 defaults to 500
+	MaxResponseTokens int    // Response budget in tokens, reasoning included; 0 means DefaultMaxResponseTokens
 	OrgID             string // Optional OpenAI organization ID; sent as OpenAI-Organization header
 	ProjectID         string // Optional OpenAI project ID; sent as OpenAI-Project header
 }
@@ -54,7 +80,7 @@ func NewClient(opts ClientOptions) (LLMClient, error) {
 
 	maxResp := opts.MaxResponseTokens
 	if maxResp <= 0 {
-		maxResp = 500
+		maxResp = DefaultMaxResponseTokens
 	}
 
 	switch strings.ToLower(opts.Provider) {
@@ -93,6 +119,14 @@ func NewClient(opts ClientOptions) (LLMClient, error) {
 	}
 }
 
+// budgetExhausted builds the error for a response whose budget was used up
+// before any answer text appeared, which is what a reasoning model does
+// when the budget is too small for its thinking.
+func budgetExhausted(maxTokens int, detail string) error {
+	return fmt.Errorf("%w: the %d-token response budget was used up before an answer was produced (%s); raise it with --max-response-tokens or ClientOptions.MaxResponseTokens",
+		ErrEmptyResponse, maxTokens, detail)
+}
+
 // --- Anthropic client ---
 
 type anthropicClient struct {
@@ -119,9 +153,11 @@ type anthropicMessage struct {
 
 type anthropicResponse struct {
 	Content []struct {
+		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
-	Error *struct {
+	StopReason string `json:"stop_reason"`
+	Error      *struct {
 		Message string `json:"message"`
 	} `json:"error"`
 }
@@ -178,7 +214,17 @@ func (c *anthropicClient) Complete(ctx context.Context, systemPrompt, userConten
 		return "", fmt.Errorf("empty response from API")
 	}
 
-	return result.Content[0].Text, nil
+	// A gateway with extended thinking on returns thinking blocks before
+	// the text block, and only thinking blocks when the budget ran out.
+	for _, block := range result.Content {
+		if block.Type == "text" || block.Type == "" {
+			return block.Text, nil
+		}
+	}
+	if result.StopReason == "max_tokens" {
+		return "", budgetExhausted(c.maxTokens, "stop_reason max_tokens, thinking only")
+	}
+	return "", fmt.Errorf("%w: no text block in response", ErrEmptyResponse)
 }
 
 // --- OpenAI-compatible client ---
@@ -240,7 +286,13 @@ type openaiResponse struct {
 	Choices []struct {
 		Message struct {
 			Content string `json:"content"`
+			// Reasoning models that expose their thinking put it here
+			// (reasoning_content on GLM, Kimi, and DeepSeek; reasoning on
+			// some gateways). It is not the answer.
+			ReasoningContent string `json:"reasoning_content"`
+			Reasoning        string `json:"reasoning"`
 		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Error *struct {
 		Message string `json:"message"`
@@ -332,7 +384,26 @@ func (c *openaiClient) Complete(ctx context.Context, systemPrompt, userContent s
 		return "", fmt.Errorf("empty response from API")
 	}
 
-	return result.Choices[0].Message.Content, nil
+	choice := result.Choices[0]
+	if choice.Message.Content != "" {
+		return choice.Message.Content, nil
+	}
+	reasoned := choice.Message.ReasoningContent != "" || choice.Message.Reasoning != ""
+	switch {
+	case reasoned && choice.FinishReason == "length":
+		return "", budgetExhausted(c.maxTokens, "finish_reason length, reasoning only")
+	case reasoned:
+		return "", budgetExhausted(c.maxTokens, "reasoning only, finish_reason "+strconvQuote(choice.FinishReason))
+	case choice.FinishReason == "length":
+		return "", budgetExhausted(c.maxTokens, "finish_reason length")
+	}
+	return "", fmt.Errorf("%w: empty content in response", ErrEmptyResponse)
+}
+
+// strconvQuote quotes a finish reason for an error message without pulling
+// in strconv for one call.
+func strconvQuote(s string) string {
+	return fmt.Sprintf("%q", s)
 }
 
 // --- Claude CLI client ---
@@ -347,31 +418,44 @@ type claudeCLIClient struct {
 func (c *claudeCLIClient) Provider() string  { return "claude-cli" }
 func (c *claudeCLIClient) ModelName() string { return c.model }
 
-// buildArgs returns the CLI arguments for a claude invocation.
-func (c *claudeCLIClient) buildArgs(systemPrompt, userContent string) []string {
+// buildArgs returns the CLI arguments for a claude invocation. The user
+// content is not among them: it goes to the CLI on stdin, and the system
+// prompt through a file, because the judge prompt alone is about 24 KB and
+// Windows limits a command line to 32 KB (8 KB when launched through a
+// .cmd shim), which the old prompt-as-argument form exceeded (#103).
+func (c *claudeCLIClient) buildArgs(systemPromptFile string) []string {
 	args := []string{
 		"-p",
 		"--output-format", "text",
 		"--model", c.model,
 	}
-	if systemPrompt != "" {
-		args = append(args, "--system-prompt", systemPrompt)
+	if systemPromptFile != "" {
+		args = append(args, "--system-prompt-file", systemPromptFile)
 	}
-	args = append(args, "--", userContent)
 	return args
 }
 
 func (c *claudeCLIClient) Complete(ctx context.Context, systemPrompt, userContent string) (string, error) {
-	args := c.buildArgs(systemPrompt, userContent)
-
-	cmd := exec.CommandContext(ctx, "claude", args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("claude CLI failed: %w: %s", err, stderr.String())
+	var promptFile string
+	if systemPrompt != "" {
+		f, err := os.CreateTemp("", "skill-validator-system-prompt-*.md")
+		if err != nil {
+			return "", fmt.Errorf("writing system prompt file: %w", err)
+		}
+		promptFile = f.Name()
+		defer func() { _ = os.Remove(promptFile) }()
+		if _, err := f.WriteString(systemPrompt); err != nil {
+			_ = f.Close()
+			return "", fmt.Errorf("writing system prompt file: %w", err)
+		}
+		if err := f.Close(); err != nil {
+			return "", fmt.Errorf("writing system prompt file: %w", err)
+		}
 	}
 
-	return strings.TrimSpace(stdout.String()), nil
+	stdout, stderr, err := runClaude(ctx, c.buildArgs(promptFile), strings.NewReader(userContent))
+	if err != nil {
+		return "", fmt.Errorf("claude CLI failed: %w: %s", err, stderr)
+	}
+	return strings.TrimSpace(stdout), nil
 }
