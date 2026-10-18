@@ -8,12 +8,16 @@ builds:
     goos:
       - darwin
       - linux
+      - windows
     goarch:
       - amd64
       - arm64
 
 archives:
-  - format: tar.gz
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
 
 brews:
   - directory: Formula

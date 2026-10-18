@@ -49,10 +49,11 @@ Spec compliance is table stakes. `skill-validator` goes further: it checks that 
 
 ### Install CLI
 
-You can install the CLI in three ways:
+You can install the CLI in four ways:
 
 - [Homebrew](#homebrew)
 - [Using Go](#using-go)
+- [Pre-built binaries](#pre-built-binaries)
 - [Pre-commit hook](#pre-commit-hook)
 
 #### Homebrew
@@ -75,6 +76,10 @@ git clone https://github.com/agent-ecosystem/skill-validator.git
 cd skill-validator
 go build -o skill-validator ./cmd/skill-validator
 ```
+
+#### Pre-built binaries
+
+Each [release](https://github.com/agent-ecosystem/skill-validator/releases) ships archives for macOS and Linux (`.tar.gz`) and Windows (`.zip`), each for amd64 and arm64, with a checksums file. Unpack the archive and put `skill-validator` (`skill-validator.exe` on Windows) on your `PATH`.
 
 #### Pre-commit hook
 
