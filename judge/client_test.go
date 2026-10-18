@@ -573,6 +573,38 @@ func TestAnthropicClient_ThinkingBlocks(t *testing.T) {
 			t.Errorf("error = %v, want ErrEmptyResponse naming the budget", err)
 		}
 	})
+
+	t.Run("empty text block at max_tokens names the budget", func(t *testing.T) {
+		client := serve(t, `{"content":[{"type":"thinking","thinking":"hmm"},{"type":"text","text":""}],"stop_reason":"max_tokens"}`)
+		_, err := client.Complete(t.Context(), "sys", "user")
+		if !errors.Is(err, ErrEmptyResponse) || !strings.Contains(err.Error(), "500-token response budget") {
+			t.Errorf("error = %v, want ErrEmptyResponse naming the budget", err)
+		}
+	})
+
+	t.Run("empty content at max_tokens names the budget", func(t *testing.T) {
+		client := serve(t, `{"content":[],"stop_reason":"max_tokens"}`)
+		_, err := client.Complete(t.Context(), "sys", "user")
+		if !errors.Is(err, ErrEmptyResponse) || !strings.Contains(err.Error(), "500-token response budget") {
+			t.Errorf("error = %v, want ErrEmptyResponse naming the budget", err)
+		}
+	})
+
+	t.Run("empty text block does not hide a later answer", func(t *testing.T) {
+		client := serve(t, `{"content":[{"type":"text","text":""},{"type":"text","text":"ok"}],"stop_reason":"end_turn"}`)
+		got, err := client.Complete(t.Context(), "sys", "user")
+		if err != nil || got != "ok" {
+			t.Errorf("got %q, %v; want \"ok\"", got, err)
+		}
+	})
+
+	t.Run("empty content without max_tokens is an empty response", func(t *testing.T) {
+		client := serve(t, `{"content":[],"stop_reason":"end_turn"}`)
+		_, err := client.Complete(t.Context(), "sys", "user")
+		if !errors.Is(err, ErrEmptyResponse) || strings.Contains(err.Error(), "budget") {
+			t.Errorf("error = %v, want plain ErrEmptyResponse", err)
+		}
+	})
 }
 
 func TestMaxResponseTokens(t *testing.T) {

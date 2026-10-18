@@ -210,21 +210,22 @@ func (c *anthropicClient) Complete(ctx context.Context, systemPrompt, userConten
 		return "", fmt.Errorf("API error: %s", result.Error.Message)
 	}
 
-	if len(result.Content) == 0 {
-		return "", fmt.Errorf("empty response from API")
-	}
-
 	// A gateway with extended thinking on returns thinking blocks before
-	// the text block, and only thinking blocks when the budget ran out.
+	// the text block, and only thinking blocks, or an empty text block,
+	// when the budget ran out. The answer is the first text block with
+	// something in it.
 	for _, block := range result.Content {
-		if block.Type == "text" || block.Type == "" {
+		if (block.Type == "text" || block.Type == "") && block.Text != "" {
 			return block.Text, nil
 		}
 	}
 	if result.StopReason == "max_tokens" {
-		return "", budgetExhausted(c.maxTokens, "stop_reason max_tokens, thinking only")
+		return "", budgetExhausted(c.maxTokens, "stop_reason max_tokens, no answer text")
 	}
-	return "", fmt.Errorf("%w: no text block in response", ErrEmptyResponse)
+	if len(result.Content) == 0 {
+		return "", fmt.Errorf("%w: empty content in response", ErrEmptyResponse)
+	}
+	return "", fmt.Errorf("%w: no text in response", ErrEmptyResponse)
 }
 
 // --- OpenAI-compatible client ---
