@@ -1,9 +1,3 @@
-
-**Response budget**: Each judge call lets the model generate up to 8,192 tokens by default. The scores themselves take a few hundred, but reasoning models (OpenAI o-series and gpt-5, GLM, Kimi, DeepSeek, and others) think inside the same budget before they answer, and a model that runs out of budget while thinking returns no answer at all. Use `--max-response-tokens` to raise the budget for a model that needs more room:
-
-```
-skill-validator score evaluate --provider openai --base-url https://open.bigmodel.cn/api/paas/v4 --model glm-4.7 --max-response-tokens 16000 <path>
-```
 # skill-validator
 
 [![CI](https://github.com/agent-ecosystem/skill-validator/actions/workflows/ci.yml/badge.svg)](https://github.com/agent-ecosystem/skill-validator/actions/workflows/ci.yml)
@@ -371,6 +365,12 @@ Use `--model` to override the default model and `--base-url` to point at any Ope
 | `auto` (default) | Uses `max_completion_tokens` for o-series and gpt-5+ models, `max_tokens` for everything else |
 | `max_tokens` | Always sends `max_tokens` (needed by some OpenAI-compatible providers like Ollama) |
 | `max_completion_tokens` | Always sends `max_completion_tokens` |
+
+**Response budget**: Each judge call lets the model generate up to 8,192 tokens by default. The scores themselves take a few hundred, but reasoning models (OpenAI o-series and gpt-5, GLM, Kimi, DeepSeek, and others) think inside the same budget before they answer, and a model that runs out of budget while thinking returns no answer at all. Use `--max-response-tokens` to raise the budget for a model that needs more room:
+
+```
+skill-validator score evaluate --provider openai --base-url https://open.bigmodel.cn/api/paas/v4 --model glm-4.7 --max-response-tokens 16000 <path>
+```
 
 ```
 Scoring skill: my-skill/
