@@ -5,10 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/agent-ecosystem/skill-validator/internal/testutil"
 	"github.com/agent-ecosystem/skill-validator/skill"
 	"github.com/agent-ecosystem/skill-validator/types"
 )
@@ -91,18 +91,13 @@ func TestReadReferencesMarkdownFiles(t *testing.T) {
 // skill tree, the regular files inside pass a leaf-only check. Their content
 // must not be read and shipped to the LLM judge.
 func TestReadReferencesMarkdownFiles_SkipsSymlinkedDirectory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlinks require admin on Windows")
-	}
 	outside := t.TempDir()
 	if err := os.WriteFile(filepath.Join(outside, "leak.md"), []byte("SHOULD-NOT-LEAK"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	dir := t.TempDir()
-	if err := os.Symlink(outside, filepath.Join(dir, "references")); err != nil {
-		t.Fatal(err)
-	}
+	testutil.Symlink(t, outside, filepath.Join(dir, "references"))
 
 	files := ReadReferencesMarkdownFiles(dir)
 	for name, content := range files {
@@ -113,9 +108,6 @@ func TestReadReferencesMarkdownFiles_SkipsSymlinkedDirectory(t *testing.T) {
 }
 
 func TestReadReferencesMarkdownFiles_SkipsSymlinks(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlinks require admin on Windows")
-	}
 	dir := t.TempDir()
 	refsDir := filepath.Join(dir, "references")
 	if err := os.MkdirAll(refsDir, 0o755); err != nil {
@@ -128,9 +120,7 @@ func TestReadReferencesMarkdownFiles_SkipsSymlinks(t *testing.T) {
 	if err := os.WriteFile(secret, []byte("SHOULD-NOT-LEAK"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(secret, filepath.Join(refsDir, "leaky.md")); err != nil {
-		t.Fatal(err)
-	}
+	testutil.Symlink(t, secret, filepath.Join(refsDir, "leaky.md"))
 
 	files := ReadReferencesMarkdownFiles(dir)
 	if _, ok := files["leaky.md"]; ok {
@@ -350,9 +340,7 @@ func TestDetectSkills(t *testing.T) {
 		if err := os.MkdirAll(parent, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Symlink(realDir, filepath.Join(parent, "linked")); err != nil {
-			t.Fatal(err)
-		}
+		testutil.Symlink(t, realDir, filepath.Join(parent, "linked"))
 		mode, dirs := DetectSkills(parent)
 		if mode != types.MultiSkill {
 			t.Errorf("expected MultiSkill, got %d", mode)
@@ -506,20 +494,10 @@ func TestDiscoverSkills_Nested(t *testing.T) {
 }
 
 func TestDiscoverSkills_Symlinks(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlinks require admin on Windows")
-	}
-	mustSymlink := func(t *testing.T, target, link string) {
-		t.Helper()
-		if err := os.Symlink(target, link); err != nil {
-			t.Fatal(err)
-		}
-	}
-
 	t.Run("cycle to root", func(t *testing.T) {
 		dir := t.TempDir()
 		writeSkill(t, filepath.Join(dir, "team", "skill"), "---\nname: s\n---\n")
-		mustSymlink(t, dir, filepath.Join(dir, "loop"))
+		testutil.Symlink(t, dir, filepath.Join(dir, "loop"))
 		d := DiscoverSkills(dir, DefaultMaxDepth)
 		if want := []string{filepath.Join(dir, "team", "skill")}; !reflect.DeepEqual(d.Dirs, want) {
 			t.Errorf("dirs = %v, want %v", d.Dirs, want)
@@ -532,7 +510,7 @@ func TestDiscoverSkills_Symlinks(t *testing.T) {
 	t.Run("cycle to parent", func(t *testing.T) {
 		dir := t.TempDir()
 		writeSkill(t, filepath.Join(dir, "team", "skill"), "---\nname: s\n---\n")
-		mustSymlink(t, "..", filepath.Join(dir, "team", "up"))
+		testutil.Symlink(t, "..", filepath.Join(dir, "team", "up"))
 		d := DiscoverSkills(dir, DefaultMaxDepth)
 		if want := []string{filepath.Join(dir, "team", "skill")}; !reflect.DeepEqual(d.Dirs, want) {
 			t.Errorf("dirs = %v, want %v", d.Dirs, want)
@@ -542,7 +520,7 @@ func TestDiscoverSkills_Symlinks(t *testing.T) {
 	t.Run("alias of a skill is reported once", func(t *testing.T) {
 		dir := t.TempDir()
 		writeSkill(t, filepath.Join(dir, "real"), "---\nname: s\n---\n")
-		mustSymlink(t, filepath.Join(dir, "real"), filepath.Join(dir, "alias"))
+		testutil.Symlink(t, filepath.Join(dir, "real"), filepath.Join(dir, "alias"))
 		d := DiscoverSkills(dir, DefaultMaxDepth)
 		if len(d.Dirs) != 1 {
 			t.Errorf("dirs = %v, want exactly one", d.Dirs)
@@ -556,7 +534,7 @@ func TestDiscoverSkills_Symlinks(t *testing.T) {
 		// a second skill. Reported paths stay relative, as given.
 		base := t.TempDir()
 		writeSkill(t, filepath.Join(base, "catalog", "real"), "---\nname: s\n---\n")
-		mustSymlink(t, filepath.Join(base, "catalog", "real"), filepath.Join(base, "catalog", "alias"))
+		testutil.Symlink(t, filepath.Join(base, "catalog", "real"), filepath.Join(base, "catalog", "alias"))
 		t.Chdir(base)
 		d := DiscoverSkills("catalog", DefaultMaxDepth)
 		if want := []string{filepath.Join("catalog", "alias")}; !reflect.DeepEqual(d.Dirs, want) {
@@ -573,7 +551,7 @@ func TestDiscoverSkills_Symlinks(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(dir, "team"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		mustSymlink(t, filepath.Join(outside, "shared"), filepath.Join(dir, "team", "shared"))
+		testutil.Symlink(t, filepath.Join(outside, "shared"), filepath.Join(dir, "team", "shared"))
 		d := DiscoverSkills(dir, DefaultMaxDepth)
 		if want := []string{filepath.Join(dir, "team", "shared")}; !reflect.DeepEqual(d.Dirs, want) {
 			t.Errorf("dirs = %v, want %v", d.Dirs, want)
@@ -583,8 +561,8 @@ func TestDiscoverSkills_Symlinks(t *testing.T) {
 	t.Run("broken link and link to file are ignored", func(t *testing.T) {
 		dir := t.TempDir()
 		writeSkill(t, filepath.Join(dir, "skill"), "---\nname: s\n---\n")
-		mustSymlink(t, filepath.Join(dir, "missing"), filepath.Join(dir, "dangling"))
-		mustSymlink(t, filepath.Join(dir, "skill", "SKILL.md"), filepath.Join(dir, "filelink"))
+		testutil.Symlink(t, filepath.Join(dir, "missing"), filepath.Join(dir, "dangling"))
+		testutil.Symlink(t, filepath.Join(dir, "skill", "SKILL.md"), filepath.Join(dir, "filelink"))
 		d := DiscoverSkills(dir, DefaultMaxDepth)
 		if want := []string{filepath.Join(dir, "skill")}; !reflect.DeepEqual(d.Dirs, want) {
 			t.Errorf("dirs = %v, want %v", d.Dirs, want)
@@ -601,7 +579,7 @@ func TestDiscoverSkills_Symlinks(t *testing.T) {
 		dir := t.TempDir()
 		// "aaa-link" sorts before "team", so a depth-first scan would spend
 		// its budget inside the linked tree and report no skills.
-		mustSymlink(t, big, filepath.Join(dir, "aaa-link"))
+		testutil.Symlink(t, big, filepath.Join(dir, "aaa-link"))
 		writeSkill(t, filepath.Join(dir, "team", "skill"), "---\nname: s\n---\n")
 		d := discoverSkills(dir, DefaultMaxDepth, 40)
 		if want := []string{filepath.Join(dir, "team", "skill")}; !reflect.DeepEqual(d.Dirs, want) {

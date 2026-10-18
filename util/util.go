@@ -103,14 +103,14 @@ func checkSafePath(root, path string) error {
 	return nil
 }
 
-// ResolvesWithin reports whether path, after resolving all symlinks in both
-// arguments, remains inside root. The path must exist.
+// ResolvesWithin reports whether path, after resolving all symlinks and
+// junctions in both arguments, remains inside root. The path must exist.
 func ResolvesWithin(root, path string) (bool, error) {
-	resolvedRoot, err := filepath.EvalSymlinks(root)
+	resolvedRoot, err := RealPath(root)
 	if err != nil {
 		return false, err
 	}
-	resolved, err := filepath.EvalSymlinks(path)
+	resolved, err := RealPath(path)
 	if err != nil {
 		return false, err
 	}

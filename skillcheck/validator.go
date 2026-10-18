@@ -116,7 +116,7 @@ func discoverSkills(root string, maxDepth, maxDirs int) Discovery {
 	if err != nil {
 		return Discovery{Mode: types.NoSkill}
 	}
-	realRoot, err := filepath.EvalSymlinks(absRoot)
+	realRoot, err := util.RealPath(absRoot)
 	if err != nil {
 		return Discovery{Mode: types.NoSkill}
 	}
@@ -152,10 +152,12 @@ func discoverSkills(root string, maxDepth, maxDirs int) Discovery {
 			switch {
 			case entry.IsDir():
 				real = filepath.Join(cur.real, name)
-			case entry.Type()&os.ModeSymlink != 0:
-				// Follow the link, but only into a directory that exists.
+			case entry.Type()&(os.ModeSymlink|os.ModeIrregular) != 0:
+				// A symlink, or on Windows a directory junction, which Go
+				// reports as irregular rather than as a symlink (#101).
+				// Follow it, but only into a directory that exists.
 				// Resolving through cur.real keeps the key absolute.
-				resolved, err := filepath.EvalSymlinks(filepath.Join(cur.real, name))
+				resolved, err := util.RealPath(filepath.Join(cur.real, name))
 				if err != nil {
 					continue
 				}

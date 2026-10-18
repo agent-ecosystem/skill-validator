@@ -3,9 +3,9 @@ package structure
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
+	"github.com/agent-ecosystem/skill-validator/internal/testutil"
 	"github.com/agent-ecosystem/skill-validator/types"
 )
 
@@ -28,9 +28,6 @@ func TestCheckInternalLinks(t *testing.T) {
 	// Issue #86: a link that looks internal syntactically may be a symlink
 	// whose target resolves outside the skill directory.
 	t.Run("symlink escaping skill directory is rejected", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("symlinks require admin on Windows")
-		}
 		outside := t.TempDir()
 		secret := filepath.Join(outside, "secret.md")
 		if err := os.WriteFile(secret, []byte("OUT-OF-TREE"), 0o644); err != nil {
@@ -41,9 +38,7 @@ func TestCheckInternalLinks(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(dir, "references"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Symlink(secret, filepath.Join(dir, "references", "guide.md")); err != nil {
-			t.Fatal(err)
-		}
+		testutil.Symlink(t, secret, filepath.Join(dir, "references", "guide.md"))
 
 		body := "See [guide](references/guide.md)."
 		results := CheckInternalLinks(dir, body)
@@ -51,14 +46,9 @@ func TestCheckInternalLinks(t *testing.T) {
 	})
 
 	t.Run("symlink resolving inside skill directory passes", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("symlinks require admin on Windows")
-		}
 		dir := t.TempDir()
 		writeFile(t, dir, "references/real.md", "content")
-		if err := os.Symlink(filepath.Join(dir, "references", "real.md"), filepath.Join(dir, "references", "alias.md")); err != nil {
-			t.Fatal(err)
-		}
+		testutil.Symlink(t, filepath.Join(dir, "references", "real.md"), filepath.Join(dir, "references", "alias.md"))
 
 		body := "See [alias](references/alias.md)."
 		results := CheckInternalLinks(dir, body)

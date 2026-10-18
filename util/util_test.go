@@ -5,8 +5,9 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
+
+	"github.com/agent-ecosystem/skill-validator/internal/testutil"
 )
 
 func TestRoundTo(t *testing.T) {
@@ -107,22 +108,20 @@ func TestSafeReadFile(t *testing.T) {
 		t.Errorf("IsRegularFile(regular) = false, want true")
 	}
 
-	if runtime.GOOS != "windows" {
+	t.Run("symlink is refused", func(t *testing.T) {
 		secret := filepath.Join(dir, "secret.txt")
 		if err := os.WriteFile(secret, []byte("PRIVATE"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		link := filepath.Join(dir, "link.txt")
-		if err := os.Symlink(secret, link); err != nil {
-			t.Fatal(err)
-		}
+		testutil.Symlink(t, secret, link)
 		if _, err := SafeReadFile(dir, link); !errors.Is(err, ErrUnsafeFile) {
 			t.Errorf("SafeReadFile(symlink) error = %v, want ErrUnsafeFile", err)
 		}
 		if IsRegularFile(link) {
 			t.Errorf("IsRegularFile(symlink) = true, want false")
 		}
-	}
+	})
 
 	missing := filepath.Join(dir, "missing.txt")
 	if _, err := SafeReadFile(dir, missing); err == nil {
@@ -141,19 +140,13 @@ func TestSafeReadFile(t *testing.T) {
 // a symlinked directory passes a leaf-only Lstat check, but its resolved path
 // escapes the skill root and must be refused.
 func TestSafeReadFile_SymlinkedDirectory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlinks require admin on Windows")
-	}
-
 	outside := t.TempDir()
 	if err := os.WriteFile(filepath.Join(outside, "secret.md"), []byte("OUT-OF-TREE"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	root := t.TempDir()
-	if err := os.Symlink(outside, filepath.Join(root, "references")); err != nil {
-		t.Fatal(err)
-	}
+	testutil.Symlink(t, outside, filepath.Join(root, "references"))
 
 	// The leaf is a regular file, so only the resolved-path containment
 	// check can catch the escape.
@@ -169,9 +162,7 @@ func TestSafeReadFile_SymlinkedDirectory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "assets", "real", "ok.md"), []byte("fine"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(filepath.Join(root, "assets", "real"), filepath.Join(root, "alias")); err != nil {
-		t.Fatal(err)
-	}
+	testutil.Symlink(t, filepath.Join(root, "assets", "real"), filepath.Join(root, "alias"))
 	if _, err := SafeReadFile(root, filepath.Join(root, "alias", "ok.md")); err != nil {
 		t.Errorf("SafeReadFile(file in in-tree symlinked dir) error = %v, want nil", err)
 	}
@@ -223,15 +214,13 @@ func TestSafeReadFileN(t *testing.T) {
 		}
 	}
 
-	if runtime.GOOS != "windows" {
+	t.Run("symlink is refused", func(t *testing.T) {
 		link := filepath.Join(dir, "link.txt")
-		if err := os.Symlink(path, link); err != nil {
-			t.Fatal(err)
-		}
+		testutil.Symlink(t, path, link)
 		if _, _, err := SafeReadFileN(dir, link, 4); !errors.Is(err, ErrUnsafeFile) {
 			t.Errorf("SafeReadFileN(symlink) error = %v, want ErrUnsafeFile", err)
 		}
-	}
+	})
 }
 
 // TestSafeReadFile_TooLarge covers issue #87: a file past MaxSkillFileBytes
