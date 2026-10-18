@@ -295,6 +295,11 @@ type openaiResponse struct {
 		} `json:"message"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
+	Usage struct {
+		CompletionTokensDetails struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
+	} `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
@@ -389,22 +394,23 @@ func (c *openaiClient) Complete(ctx context.Context, systemPrompt, userContent s
 	if choice.Message.Content != "" {
 		return choice.Message.Content, nil
 	}
-	reasoned := choice.Message.ReasoningContent != "" || choice.Message.Reasoning != ""
-	switch {
-	case reasoned && choice.FinishReason == "length":
-		return "", budgetExhausted(c.maxTokens, "finish_reason length, reasoning only")
-	case reasoned:
-		return "", budgetExhausted(c.maxTokens, "reasoning only, finish_reason "+strconvQuote(choice.FinishReason))
-	case choice.FinishReason == "length":
-		return "", budgetExhausted(c.maxTokens, "finish_reason length")
+	// OpenAI's own reasoning models keep their thinking private and report
+	// only its size in usage; others return the text itself.
+	reasoningTokens := result.Usage.CompletionTokensDetails.ReasoningTokens
+	reasoned := reasoningTokens > 0 || choice.Message.ReasoningContent != "" || choice.Message.Reasoning != ""
+	if reasoned || choice.FinishReason == "length" {
+		detail := fmt.Sprintf("finish_reason %q", choice.FinishReason)
+		switch {
+		case reasoningTokens > 0:
+			detail += fmt.Sprintf(", %d tokens of reasoning, no answer text", reasoningTokens)
+		case reasoned:
+			detail += ", reasoning only"
+		default:
+			detail += ", no answer text"
+		}
+		return "", budgetExhausted(c.maxTokens, detail)
 	}
 	return "", fmt.Errorf("%w: empty content in response", ErrEmptyResponse)
-}
-
-// strconvQuote quotes a finish reason for an error message without pulling
-// in strconv for one call.
-func strconvQuote(s string) string {
-	return fmt.Sprintf("%q", s)
 }
 
 // --- Claude CLI client ---
@@ -458,5 +464,12 @@ func (c *claudeCLIClient) Complete(ctx context.Context, systemPrompt, userConten
 	if err != nil {
 		return "", fmt.Errorf("claude CLI failed: %w: %s", err, stderr)
 	}
-	return strings.TrimSpace(stdout), nil
+	out := strings.TrimSpace(stdout)
+	if out == "" {
+		// The CLI manages its own token budget, so there is no budget to
+		// point at; say what happened instead of failing later in the
+		// JSON parser with nothing to show.
+		return "", fmt.Errorf("%w: the claude CLI printed nothing", ErrEmptyResponse)
+	}
+	return out, nil
 }

@@ -642,3 +642,40 @@ func TestMaxResponseTokens(t *testing.T) {
 		}
 	})
 }
+
+// OpenAI's own reasoning models keep their thinking private and report only
+// its size in usage. That is enough to name the budget, and the count makes
+// the message concrete.
+func TestOpenAIClient_ReasoningTokensInUsage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"choices":[{"message":{"content":""},"finish_reason":"length"}],"usage":{"completion_tokens":500,"completion_tokens_details":{"reasoning_tokens":480}}}`)
+	}))
+	defer server.Close()
+
+	client, err := NewClient(ClientOptions{Provider: "openai", APIKey: "k", BaseURL: server.URL, Model: "gpt-5.2", MaxResponseTokens: 500})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	_, err = client.Complete(t.Context(), "sys", "user")
+	if !errors.Is(err, ErrEmptyResponse) {
+		t.Fatalf("error = %v, want ErrEmptyResponse", err)
+	}
+	for _, want := range []string{"500-token response budget", "480 tokens of reasoning", "--max-response-tokens"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+}
+
+func TestClaudeCLIComplete_EmptyOutput(t *testing.T) {
+	stubLookPath(t, true)
+	stubRunClaude(t, func(context.Context, []string, io.Reader) (string, string, error) {
+		return "  \n", "", nil
+	})
+	client, _ := NewClient(ClientOptions{Provider: "claude-cli"})
+	_, err := client.Complete(t.Context(), "sys", "user")
+	if !errors.Is(err, ErrEmptyResponse) {
+		t.Errorf("error = %v, want ErrEmptyResponse", err)
+	}
+}
