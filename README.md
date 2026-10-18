@@ -348,7 +348,7 @@ skill-validator score evaluate --provider claude-cli <path>
 | `openai` | `OPENAI_API_KEY` | `gpt-5.2` | OpenAI, Ollama, Together, Groq, Azure, etc. \*\* |
 | `claude-cli` | _(none)_ | `sonnet` | Claude CLI (uses locally authenticated `claude` binary) \* |
 
-\* **Accuracy note:** The `claude-cli` provider shells out to the `claude` CLI, which loads local context (CLAUDE.md files, project memory, rules) into each scoring call. This extra context may influence scores, making them less reproducible across environments compared to the API-based providers. For the most consistent results, use the `anthropic` or `openai` providers with an API key.
+\* **Accuracy note:** The `claude-cli` provider shells out to the `claude` CLI, which loads local context (CLAUDE.md files, project memory, rules) into each scoring call. This extra context may influence scores, making them less reproducible across environments compared to the API-based providers. For the most consistent results, use the `anthropic` or `openai` providers with an API key. The prompt reaches the CLI on stdin and through a temporary system prompt file rather than as command-line arguments, so it fits within the Windows command-line limit; this needs Claude Code 1.0.55 or later.
 
 \*\* The `openai` provider also reads these optional environment variables: `OPENAI_BASE_URL` (API base URL, overridden by `--base-url`), `OPENAI_ORG_ID` (sent as `OpenAI-Organization` header), and `OPENAI_PROJECT_ID` (sent as `OpenAI-Project` header). The org/project headers are only sent when targeting an OpenAI endpoint (e.g. `api.openai.com`, `us.api.openai.com`), not when using third-party compatible APIs.
 
@@ -365,6 +365,12 @@ Use `--model` to override the default model and `--base-url` to point at any Ope
 | `auto` (default) | Uses `max_completion_tokens` for o-series and gpt-5+ models, `max_tokens` for everything else |
 | `max_tokens` | Always sends `max_tokens` (needed by some OpenAI-compatible providers like Ollama) |
 | `max_completion_tokens` | Always sends `max_completion_tokens` |
+
+**Response budget**: Each judge call lets the model generate up to 8,192 tokens by default. The scores themselves take a few hundred, but reasoning models (OpenAI o-series and gpt-5, GLM, Kimi, DeepSeek, and others) think inside the same budget before they answer, and a model that runs out of budget while thinking returns no answer at all. Use `--max-response-tokens` to raise the budget for a model that needs more room:
+
+```
+skill-validator score evaluate --provider openai --base-url https://open.bigmodel.cn/api/paas/v4 --model glm-4.7 --max-response-tokens 16000 <path>
+```
 
 ```
 Scoring skill: my-skill/
@@ -421,6 +427,14 @@ skill-validator score evaluate --provider openai --base-url http://localhost:114
 ```
 
 Auto-detection works for most OpenAI models, but OpenAI-compatible providers (Ollama, vLLM, Groq, etc.) vary in which parameter they support. When in doubt, check your provider's documentation.
+
+If you see an error like this:
+
+```
+Error: scoring SKILL.md: model returned no text: the 8192-token response budget was used up before an answer was produced (finish_reason length, reasoning only); raise it with --max-response-tokens or ClientOptions.MaxResponseTokens
+```
+
+The model spent the whole response budget on reasoning. Raise it with `--max-response-tokens` (see **Response budget** above).
 
 **Content truncation**: By default, file content is truncated to 8,000 characters before sending to the LLM. Use `--full-content` to send the entire file — useful for large reference files where the scoring should account for all content, at the cost of higher token usage.
 

@@ -16,15 +16,16 @@ import (
 )
 
 var (
-	evalProvider       string
-	evalModel          string
-	evalBaseURL        string
-	evalRescore        bool
-	evalSkillOnly      bool
-	evalRefsOnly       bool
-	evalDisplay        string
-	evalFullContent    bool
-	evalMaxTokensStyle string
+	evalProvider          string
+	evalModel             string
+	evalBaseURL           string
+	evalRescore           bool
+	evalSkillOnly         bool
+	evalRefsOnly          bool
+	evalDisplay           string
+	evalFullContent       bool
+	evalMaxTokensStyle    string
+	evalMaxResponseTokens int
 )
 
 var scoreEvaluateCmd = &cobra.Command{
@@ -63,6 +64,7 @@ func init() {
 	scoreEvaluateCmd.Flags().StringVar(&evalDisplay, "display", "aggregate", "reference score display: aggregate or files")
 	scoreEvaluateCmd.Flags().BoolVar(&evalFullContent, "full-content", false, "send full file content to LLM (default: truncate to 8,000 chars)")
 	scoreEvaluateCmd.Flags().StringVar(&evalMaxTokensStyle, "max-tokens-style", "auto", "token parameter style: auto, max_tokens, or max_completion_tokens")
+	scoreEvaluateCmd.Flags().IntVar(&evalMaxResponseTokens, "max-response-tokens", judge.DefaultMaxResponseTokens, "response budget in tokens per judge call; reasoning models think inside this budget before answering")
 	scoreCmd.AddCommand(scoreEvaluateCmd)
 }
 
@@ -81,6 +83,10 @@ func runScoreEvaluate(cmd *cobra.Command, args []string) error {
 		// valid
 	default:
 		return fmt.Errorf("--max-tokens-style must be \"auto\", \"max_tokens\", or \"max_completion_tokens\"")
+	}
+
+	if evalMaxResponseTokens < 1 {
+		return fmt.Errorf("--max-response-tokens must be at least 1")
 	}
 
 	// Resolve API key (not needed for claude-cli)
@@ -105,13 +111,14 @@ func runScoreEvaluate(cmd *cobra.Command, args []string) error {
 	}
 
 	client, err := judge.NewClient(judge.ClientOptions{
-		Provider:       evalProvider,
-		APIKey:         apiKey,
-		BaseURL:        baseURL,
-		Model:          evalModel,
-		MaxTokensStyle: evalMaxTokensStyle,
-		OrgID:          orgID,
-		ProjectID:      projectID,
+		Provider:          evalProvider,
+		APIKey:            apiKey,
+		BaseURL:           baseURL,
+		Model:             evalModel,
+		MaxTokensStyle:    evalMaxTokensStyle,
+		MaxResponseTokens: evalMaxResponseTokens,
+		OrgID:             orgID,
+		ProjectID:         projectID,
 	})
 	if err != nil {
 		return err
