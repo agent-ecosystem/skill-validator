@@ -4,9 +4,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
+	"github.com/agent-ecosystem/skill-validator/internal/testutil"
 	"github.com/agent-ecosystem/skill-validator/util"
 )
 
@@ -127,17 +127,12 @@ func TestLoad(t *testing.T) {
 	})
 
 	t.Run("refuses SKILL.md symlink", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("symlinks require admin on Windows")
-		}
 		dir := t.TempDir()
 		secret := filepath.Join(dir, "secret.md")
 		if err := os.WriteFile(secret, []byte("---\nname: x\ndescription: x\n---\nLEAK"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Symlink(secret, filepath.Join(dir, "SKILL.md")); err != nil {
-			t.Fatal(err)
-		}
+		testutil.Symlink(t, secret, filepath.Join(dir, "SKILL.md"))
 		_, err := Load(dir)
 		if !errors.Is(err, util.ErrUnsafeFile) {
 			t.Fatalf("expected ErrUnsafeFile, got %v", err)
