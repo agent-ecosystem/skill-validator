@@ -103,6 +103,19 @@ func TestExtractLinks(t *testing.T) {
 			t.Errorf("links[0] = %q, want %q", links[0], "references/empty.md")
 		}
 	})
+
+	t.Run("fence info string with punctuation", func(t *testing.T) {
+		body := "```shell-session\n$ curl https://example.com/api\n```\n" +
+			"Then read [the guide](references/guide.md).\n" +
+			"```bash\nconvert --help\n```"
+		links := ExtractLinks(body)
+		if len(links) != 1 {
+			t.Fatalf("expected 1 link, got %d: %v", len(links), links)
+		}
+		if links[0] != "references/guide.md" {
+			t.Errorf("links[0] = %q, want %q", links[0], "references/guide.md")
+		}
+	})
 }
 
 func TestTrimTrailingDelimiters(t *testing.T) {

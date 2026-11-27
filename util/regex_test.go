@@ -19,6 +19,16 @@ func TestCodeBlockStrip(t *testing.T) {
 			want:  "before\n\nafter",
 		},
 		{
+			name:  "info string with punctuation",
+			input: "before\n```c++\nint x;\n```\nmiddle\n```shell-session\n$ ls\n```\nafter",
+			want:  "before\n\nmiddle\n\nafter",
+		},
+		{
+			name:  "info string with attributes",
+			input: "before\n``` bash title=\"run.sh\"\n./run.sh\n```\nafter",
+			want:  "before\n\nafter",
+		},
+		{
 			name:  "no fence",
 			input: "just plain text",
 			want:  "just plain text",
@@ -61,6 +71,12 @@ func TestCodeBlockPattern(t *testing.T) {
 			input:    "~~~python\nprint('hi')\n~~~",
 			wantN:    1,
 			wantBody: "print('hi')\n",
+		},
+		{
+			name:     "info string with punctuation",
+			input:    "```objective-c\n[obj run];\n```\nprose\n```c++\nint x;\n```",
+			wantN:    2,
+			wantBody: "[obj run];\n",
 		},
 	}
 	for _, tt := range tests {
