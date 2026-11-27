@@ -1,6 +1,7 @@
 package links
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -237,11 +238,39 @@ func TestCheckLinks_ConcurrencyAndTruncation(t *testing.T) {
 	}
 }
 
+func TestCheckLinks_ContextCancellation(t *testing.T) {
+	orig := newHTTPClient
+	newHTTPClient = func() *http.Client { return testHTTPClient() }
+	t.Cleanup(func() { newHTTPClient = orig })
+
+	// The handler never answers on its own, so only cancellation can end the
+	// request before the client timeout.
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(func() { close(release) })
+
+	ctx, cancel := context.WithCancel(t.Context())
+	time.AfterFunc(50*time.Millisecond, cancel)
+
+	start := time.Now()
+	results := CheckLinks(ctx, t.TempDir(), "[slow]("+server.URL+"/slow)")
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("CheckLinks returned %v after it started, want it to stop soon after the context is canceled", elapsed)
+	}
+	requireResultContaining(t, results, types.Error, "context canceled")
+}
+
 func TestCheckHTTPLink(t *testing.T) {
 	client := testHTTPClient()
 
 	t.Run("connection refused", func(t *testing.T) {
-		result := checkHTTPLink(types.ResultContext{Category: "Links", File: "SKILL.md"}, client, "http://127.0.0.1:1")
+		result := checkHTTPLink(t.Context(), types.ResultContext{Category: "Links", File: "SKILL.md"}, client, "http://127.0.0.1:1")
 		if result.Level != types.Error {
 			t.Errorf("expected Error level, got %d", result.Level)
 		}
@@ -260,7 +289,7 @@ func TestCheckHTTPLink(t *testing.T) {
 		server := httptest.NewServer(mux)
 		defer server.Close()
 
-		result := checkHTTPLink(types.ResultContext{Category: "Links", File: "SKILL.md"}, client, server.URL+"/redirect")
+		result := checkHTTPLink(t.Context(), types.ResultContext{Category: "Links", File: "SKILL.md"}, client, server.URL+"/redirect")
 		if result.Level != types.Pass {
 			t.Errorf("expected Pass for followed redirect, got level=%d message=%q", result.Level, result.Message)
 		}
@@ -273,7 +302,7 @@ func TestCheckHTTPLink(t *testing.T) {
 		}))
 		defer server.Close()
 
-		result := checkHTTPLink(types.ResultContext{Category: "Links", File: "SKILL.md"}, client, server.URL)
+		result := checkHTTPLink(t.Context(), types.ResultContext{Category: "Links", File: "SKILL.md"}, client, server.URL)
 		if result.Level != types.Error {
 			t.Errorf("expected Error for broken redirect target, got level=%d message=%q", result.Level, result.Message)
 		}
@@ -286,7 +315,7 @@ func TestCheckHTTPLink(t *testing.T) {
 		}))
 		defer server.Close()
 
-		result := checkHTTPLink(types.ResultContext{Category: "Links", File: "SKILL.md"}, client, server.URL+"/loop")
+		result := checkHTTPLink(t.Context(), types.ResultContext{Category: "Links", File: "SKILL.md"}, client, server.URL+"/loop")
 		if result.Level != types.Error {
 			t.Errorf("expected Error for redirect loop, got level=%d message=%q", result.Level, result.Message)
 		}
@@ -299,7 +328,7 @@ func TestCheckHTTPLink(t *testing.T) {
 		}))
 		defer server.Close()
 
-		result := checkHTTPLink(types.ResultContext{Category: "Links", File: "SKILL.md"}, client, server.URL)
+		result := checkHTTPLink(t.Context(), types.ResultContext{Category: "Links", File: "SKILL.md"}, client, server.URL)
 		if result.Level != types.Info {
 			t.Errorf("expected Info level for 403, got %d", result.Level)
 		}
@@ -316,7 +345,7 @@ func TestCheckHTTPLink(t *testing.T) {
 		}))
 		defer server.Close()
 
-		result := checkHTTPLink(types.ResultContext{Category: "Links", File: "SKILL.md"}, client, server.URL)
+		result := checkHTTPLink(t.Context(), types.ResultContext{Category: "Links", File: "SKILL.md"}, client, server.URL)
 		if result.Level != types.Pass {
 			t.Errorf("expected Pass after GET fallback, got level=%d message=%q", result.Level, result.Message)
 		}
@@ -332,7 +361,7 @@ func TestCheckHTTPLink(t *testing.T) {
 		}))
 		defer server.Close()
 
-		result := checkHTTPLink(types.ResultContext{Category: "Links", File: "SKILL.md"}, client, server.URL)
+		result := checkHTTPLink(t.Context(), types.ResultContext{Category: "Links", File: "SKILL.md"}, client, server.URL)
 		if result.Level != types.Pass {
 			t.Errorf("expected Pass after GET fallback, got level=%d message=%q", result.Level, result.Message)
 		}
@@ -352,7 +381,7 @@ func TestCheckHTTPLink(t *testing.T) {
 		}))
 		defer server.Close()
 
-		result := checkHTTPLink(types.ResultContext{Category: "Links", File: "SKILL.md"}, client, server.URL)
+		result := checkHTTPLink(t.Context(), types.ResultContext{Category: "Links", File: "SKILL.md"}, client, server.URL)
 		if result.Level != types.Pass {
 			t.Errorf("expected Pass for SPA with Accept header, got level=%d message=%q", result.Level, result.Message)
 		}
@@ -364,14 +393,14 @@ func TestCheckHTTPLink(t *testing.T) {
 		}))
 		defer server.Close()
 
-		result := checkHTTPLink(types.ResultContext{Category: "Links", File: "SKILL.md"}, client, server.URL)
+		result := checkHTTPLink(t.Context(), types.ResultContext{Category: "Links", File: "SKILL.md"}, client, server.URL)
 		if result.Level != types.Error {
 			t.Errorf("expected Error for genuine 404, got level=%d message=%q", result.Level, result.Message)
 		}
 	})
 
 	t.Run("invalid URL", func(t *testing.T) {
-		result := checkHTTPLink(types.ResultContext{Category: "Links", File: "SKILL.md"}, client, "http://invalid host with spaces/")
+		result := checkHTTPLink(t.Context(), types.ResultContext{Category: "Links", File: "SKILL.md"}, client, "http://invalid host with spaces/")
 		if result.Level != types.Error {
 			t.Errorf("expected Error for invalid URL, got level=%d", result.Level)
 		}
