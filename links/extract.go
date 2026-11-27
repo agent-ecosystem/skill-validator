@@ -15,7 +15,24 @@ var (
 	mdLinkPattern = regexp.MustCompile(`\[([^\]]*)\]\(([^)]+)\)`)
 	// bareURLPattern matches bare URLs starting with http:// or https://.
 	bareURLPattern = regexp.MustCompile("(?:^|\\s)(https?://[^\\s<>\\)`]+)")
+	// linkTitlePattern matches the optional title that may follow a link
+	// destination: "title", 'title', or (title). mdLinkPattern stops at the
+	// first ")", so the closing parenthesis of a (title) is already gone.
+	linkTitlePattern = regexp.MustCompile(`\s+(?:"[^"]*"|'[^']*'|\([^)]*)$`)
 )
+
+// linkDestination returns the destination of a markdown link target,
+// without an optional title and without the angle brackets of the
+// <destination> form.
+func linkDestination(target string) string {
+	target = strings.TrimSpace(target)
+	if strings.HasPrefix(target, "<") {
+		if end := strings.IndexByte(target, '>'); end > 0 {
+			return target[1:end]
+		}
+	}
+	return linkTitlePattern.ReplaceAllString(target, "")
+}
 
 // ExtractLinks extracts all unique links from a markdown body.
 func ExtractLinks(body string) []string {
@@ -28,7 +45,7 @@ func ExtractLinks(body string) []string {
 
 	// Markdown links
 	for _, match := range mdLinkPattern.FindAllStringSubmatch(cleaned, -1) {
-		url := strings.TrimSpace(match[2])
+		url := linkDestination(match[2])
 		if !seen[url] {
 			seen[url] = true
 			links = append(links, url)
