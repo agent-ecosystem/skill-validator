@@ -82,6 +82,17 @@ func TestCheckInternalLinks(t *testing.T) {
 		}
 	})
 
+	t.Run("file link with title", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "references/guide.md", "content")
+		body := `See [guide](references/guide.md "Conversion guide").`
+		results := CheckInternalLinks(dir, body)
+		if len(results) != 1 {
+			t.Fatalf("expected 1 result, got %d: %+v", len(results), results)
+		}
+		requireResult(t, results, types.Pass, "internal link: references/guide.md (exists)")
+	})
+
 	t.Run("file link with fragment identifier", func(t *testing.T) {
 		dir := t.TempDir()
 		writeFile(t, dir, "references/guide.md", "# Heading\ncontent")

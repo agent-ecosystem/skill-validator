@@ -93,6 +93,32 @@ func TestExtractLinks(t *testing.T) {
 		}
 	})
 
+	t.Run("link title is not part of the destination", func(t *testing.T) {
+		body := `[a](references/a.md "Guide A") [b](references/b.md 'Guide B') ` +
+			`[c](references/c.md (Guide C)) [d](https://example.com/d "Docs")`
+		links := ExtractLinks(body)
+		want := []string{"references/a.md", "references/b.md", "references/c.md", "https://example.com/d"}
+		if len(links) != len(want) {
+			t.Fatalf("expected %d links, got %d: %q", len(want), len(links), links)
+		}
+		for i := range want {
+			if links[i] != want[i] {
+				t.Errorf("links[%d] = %q, want %q", i, links[i], want[i])
+			}
+		}
+	})
+
+	t.Run("angle-bracket destination", func(t *testing.T) {
+		body := `See [guide](<references/my guide.md> "Guide").`
+		links := ExtractLinks(body)
+		if len(links) != 1 {
+			t.Fatalf("expected 1 link, got %d: %q", len(links), links)
+		}
+		if links[0] != "references/my guide.md" {
+			t.Errorf("links[0] = %q, want %q", links[0], "references/my guide.md")
+		}
+	})
+
 	t.Run("empty link text", func(t *testing.T) {
 		body := "[](references/empty.md)"
 		links := ExtractLinks(body)
