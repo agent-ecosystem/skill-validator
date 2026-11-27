@@ -63,7 +63,7 @@ func CheckLinks(ctx context.Context, dir, body string) []types.Result {
 		go func(idx int, url string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			r := checkHTTPLink(rctx, client, url)
+			r := checkHTTPLink(ctx, rctx, client, url)
 			mu.Lock()
 			httpResults[idx] = linkResult{url: url, result: r}
 			mu.Unlock()
@@ -85,8 +85,8 @@ func CheckLinks(ctx context.Context, dir, body string) []types.Result {
 	return results
 }
 
-func checkHTTPLink(rctx types.ResultContext, client *http.Client, url string) types.Result {
-	req, err := http.NewRequest("HEAD", url, nil)
+func checkHTTPLink(ctx context.Context, rctx types.ResultContext, client *http.Client, url string) types.Result {
+	req, err := http.NewRequestWithContext(ctx, "HEAD", url, nil)
 	if err != nil {
 		return rctx.Errorf("%s (invalid URL: %v)", url, err)
 	}
@@ -104,14 +104,14 @@ func checkHTTPLink(rctx types.ResultContext, client *http.Client, url string) ty
 	// returns 404 or 405, which is the standard approach used by lychee,
 	// markdown-link-check, and other link validators.
 	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
-		return checkHTTPLinkGET(rctx, client, url)
+		return checkHTTPLinkGET(ctx, rctx, client, url)
 	}
 
 	return classifyResponse(rctx, url, resp.StatusCode)
 }
 
-func checkHTTPLinkGET(rctx types.ResultContext, client *http.Client, url string) types.Result {
-	req, err := http.NewRequest("GET", url, nil)
+func checkHTTPLinkGET(ctx context.Context, rctx types.ResultContext, client *http.Client, url string) types.Result {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return rctx.Errorf("%s (invalid URL: %v)", url, err)
 	}
